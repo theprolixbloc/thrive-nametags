@@ -2805,10 +2805,13 @@ function doGet(e) {
     // NEW PERSON
     // ============================================================
     function showNewPerson() {
-        document.getElementById('new-chinese').value = '';
-        document.getElementById('new-english').value = '';
+        const q = document.getElementById('search').value.trim();
+        const hasChinese = /[\u4e00-\u9fff\u3400-\u4dbf]/.test(q);
+        document.getElementById('new-chinese').value = hasChinese ? q : '';
+        document.getElementById('new-english').value = hasChinese ? '' : q;
         document.getElementById('new-overlay').classList.add('active');
-        document.getElementById('new-chinese').focus();
+        // Focus the empty field so they can fill in the other name
+        (hasChinese || !q ? document.getElementById('new-english') : document.getElementById('new-chinese')).focus();
     }
 
     function createNewTag() {
