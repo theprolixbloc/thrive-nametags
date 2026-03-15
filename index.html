@@ -303,6 +303,18 @@
             opacity: 0.6;
         }
 
+        .name-card.inactive {
+            opacity: 0.45;
+            border-style: dashed;
+            border-color: #cbd5e1;
+        }
+
+        .status-filters {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
         .empty-state {
             grid-column: 1 / -1;
             text-align: center;
@@ -785,6 +797,11 @@
                 <button class="filter-btn" data-filter="1" onclick="setFilter('1',this)">1st Service</button>
                 <button class="filter-btn" data-filter="2" onclick="setFilter('2',this)">2nd Service</button>
             </div>
+            <div class="status-filters">
+                <button class="filter-btn active" onclick="setStatusFilter('active',this)">Active</button>
+                <button class="filter-btn" onclick="setStatusFilter('all',this)">Everyone</button>
+                <button class="filter-btn" onclick="setStatusFilter('inactive',this)">Inactive</button>
+            </div>
         </div>
 
         <div class="name-grid" id="name-grid">
@@ -1091,6 +1108,8 @@ function doGet(e) {
     let people = [];
     let selectedPerson = null;
     let serviceFilter = 'all';
+    let statusFilter = 'active';  // 'active', 'all', 'inactive'
+    const SERVICE_CUTOFF_HOUR = 11; // Before 11 AM = 1st service, after = 2nd
 
     // BLE Printer State
     const BLE = {
@@ -1276,6 +1295,12 @@ function doGet(e) {
             // Apply family groupings
             applyFamilyGroups();
 
+            // Apply dynamic service from attendance history
+            applyDynamicServices();
+
+            // Flag inactive people (not seen in last 4 Sundays)
+            applyInactiveFlags();
+
             localStorage.setItem('thrive_cache', JSON.stringify(people));
         } catch (e) {
             const cached = localStorage.getItem('thrive_cache');
@@ -1318,6 +1343,24 @@ function doGet(e) {
                 const p = people.find(p => p.id === key);
                 if (p) p.group = groupName;
             }
+        }
+    }
+
+    function applyDynamicServices() {
+        for (const p of people) {
+            const hist = getPersonServiceHistory(p.id, 4);
+            if (hist.svc1 + hist.svc2 > 0) {
+                if (hist.svc1 > hist.svc2) p.service = '1';
+                else if (hist.svc2 > hist.svc1) p.service = '2';
+                // Tie: keep existing value
+            }
+        }
+    }
+
+    function applyInactiveFlags() {
+        const activeIds = getRecentActiveIds(4);
+        for (const p of people) {
+            p.inactive = !activeIds.has(p.id);
         }
     }
 
@@ -1433,6 +1476,10 @@ function doGet(e) {
         const grid = document.getElementById('name-grid');
 
         let filtered = people.filter(p => {
+            // Status filter (active/inactive)
+            if (statusFilter === 'active' && p.inactive) return false;
+            if (statusFilter === 'inactive' && !p.inactive) return false;
+            // Service filter
             if (serviceFilter !== 'all' && p.service && p.service !== serviceFilter) return false;
             if (q) {
                 return (p.chinese || '').toLowerCase().includes(q) ||
@@ -1451,6 +1498,8 @@ function doGet(e) {
                 const filteredIds = new Set(filtered.map(p => p.id));
                 for (const p of people) {
                     if (p.group && matchedGroups.has(p.group) && !filteredIds.has(p.id)) {
+                        if (statusFilter === 'active' && p.inactive) continue;
+                        if (statusFilter === 'inactive' && !p.inactive) continue;
                         if (serviceFilter !== 'all' && p.service && p.service !== serviceFilter) continue;
                         filtered.push(p);
                         filteredIds.add(p.id);
@@ -1467,7 +1516,8 @@ function doGet(e) {
         grid.innerHTML = filtered.map(p => {
             const ci = isCheckedIn(p);
             const hasGroup = !!p.group;
-            return `<div class="name-card ${ci ? 'checked-in' : ''}" onclick="selectPerson('${esc(p.id)}')">
+            const inact = p.inactive ? ' inactive' : '';
+            return `<div class="name-card${ci ? ' checked-in' : ''}${inact}" onclick="selectPerson('${esc(p.id)}')">
                 ${ci ? '<span class="check-mark">&#10003;</span>' : ''}
                 ${hasGroup ? `<span class="group-badge" title="${escH(p.group)}">&#128106;</span>` : ''}
                 ${p.chinese ? `<div class="cn">${escH(p.chinese)}</div>` : ''}
@@ -1818,25 +1868,30 @@ function doGet(e) {
         const actions = document.getElementById('print-actions');
         let buttons = '';
 
+        // Family batch print button (BLE only)
+        const familyGroup = selectedPerson?.group;
+        if (familyGroup && BLE.connected) {
+            const familyMembers = people.filter(p => p.group === familyGroup);
+            if (familyMembers.length > 1) {
+                buttons += `<button class="btn btn-success" onclick="doBatchPrint('${esc(familyGroup)}')" id="btn-batch-print">Print Family (${familyMembers.length})</button>`;
+            }
+        }
+
         if (BLE.connected) {
-            // BLE connected = primary action
             buttons += '<button class="btn btn-primary" onclick="doBLEPrint()" id="btn-ble-print">Print</button>';
             buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
             tip.style.display = 'none';
         } else if (IS_IOS && !HAS_BLE) {
-            // iPad Safari — no BLE, share is the main action
             buttons += '<button class="btn btn-primary" onclick="doShare()">Share to Nelko App</button>';
             buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
             tip.style.display = 'block';
             tip.innerHTML = 'Tap <b>Share to Nelko App</b>, select the Nelko app from the share sheet, then print from there.';
         } else if (HAS_BLE && !BLE.connected) {
-            // Has BLE support but not connected
             buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
             buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
             tip.style.display = 'block';
             tip.textContent = 'Connect the printer first for direct BLE printing.';
         } else {
-            // Generic fallback
             buttons += '<button class="btn btn-primary" onclick="doShare()">Share</button>';
             buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
             tip.style.display = 'none';
@@ -1944,35 +1999,184 @@ function doGet(e) {
     }
 
     // ============================================================
+    // BATCH PRINT (FAMILY)
+    // ============================================================
+    async function doBatchPrint(groupName) {
+        if (!BLE.connected) { toast('Connect printer first'); return; }
+
+        const members = people.filter(p => p.group === groupName);
+        if (!members.length) { toast('No family members found'); return; }
+
+        const st = document.getElementById('print-status');
+        const actions = document.getElementById('print-actions');
+        const canvas = document.getElementById('label-canvas');
+
+        // Disable all buttons
+        actions.querySelectorAll('button').forEach(b => { b.disabled = true; });
+        const batchBtn = document.getElementById('btn-batch-print');
+        if (batchBtn) { batchBtn.textContent = 'Printing...'; batchBtn.className = 'btn printing'; }
+
+        let printed = 0;
+        let failed = false;
+
+        for (let i = 0; i < members.length; i++) {
+            const member = members[i];
+            const name = member.english || member.chinese;
+
+            st.style.display = 'block';
+            st.className = 'print-status info';
+            st.textContent = `Printing ${i + 1} of ${members.length}: ${name}...`;
+
+            // Render this member's label
+            renderLabel(member.chinese, member.english, canvas);
+
+            try {
+                const bd = canvasToMonoBitmap(canvas);
+                let ok = false;
+                try {
+                    await sendToPrinter(buildRasterCommand(bd));
+                    ok = true;
+                } catch {
+                    st.textContent = `Trying alt protocol for ${name}...`;
+                }
+                if (!ok) {
+                    await sendToPrinter(buildNelkoCommand(bd));
+                }
+
+                // Log attendance for this member
+                logAttendance(member);
+                printed++;
+
+                // Wait between prints for printer to process
+                if (i < members.length - 1) {
+                    st.textContent = `Printed ${name}. Next in 1.5s...`;
+                    await sleep(1500);
+                }
+            } catch (e) {
+                const msg = e?.message || String(e) || 'Unknown error';
+                st.className = 'print-status error';
+                st.textContent = `Failed on ${name}: ${msg}`;
+                failed = true;
+
+                // Ask whether to continue
+                if (i < members.length - 1) {
+                    if (!confirm(`Print failed for ${name}. Continue with remaining ${members.length - i - 1} tags?`)) {
+                        break;
+                    }
+                    st.className = 'print-status info';
+                }
+            }
+        }
+
+        // Done
+        if (!failed) {
+            st.className = 'print-status success';
+            st.textContent = `Printed ${printed} family tags!`;
+            if (batchBtn) { batchBtn.textContent = 'Done!'; batchBtn.className = 'btn btn-success'; }
+            setTimeout(() => closeModalDirect('preview-overlay'), 1200);
+        } else {
+            st.textContent += ` (${printed} of ${members.length} printed)`;
+            actions.querySelectorAll('button').forEach(b => { b.disabled = false; });
+            if (batchBtn) { batchBtn.textContent = `Retry Family (${members.length})`; batchBtn.className = 'btn btn-danger'; }
+        }
+
+        renderGrid();
+    }
+
+    // ============================================================
     // ATTENDANCE
     // ============================================================
-    function todayKey() {
-        const d = new Date();
+    function dateKey(d) {
         return `thrive_att_${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     }
+
+    function todayKey() { return dateKey(new Date()); }
 
     function getAttendance() {
         try { return JSON.parse(localStorage.getItem(todayKey()) || '[]'); } catch { return []; }
     }
 
+    function getAttendanceForDate(key) {
+        try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+    }
+
+    function detectService() {
+        return new Date().getHours() < SERVICE_CUTOFF_HOUR ? '1' : '2';
+    }
+
+    function getLastSundays(n) {
+        const keys = [];
+        const d = new Date();
+        // If today is Sunday, include today
+        if (d.getDay() === 0) {
+            keys.push(dateKey(d));
+            n--;
+        }
+        // Go back to find previous Sundays
+        const prev = new Date(d);
+        prev.setDate(prev.getDate() - prev.getDay()); // go to most recent Sunday
+        if (keys.length === 0 || dateKey(prev) !== keys[0]) {
+            // If today isn't Sunday, start from last Sunday
+            if (keys.length === 0) {
+                keys.push(dateKey(prev));
+                n--;
+            }
+        }
+        while (n > 0) {
+            prev.setDate(prev.getDate() - 7);
+            keys.push(dateKey(prev));
+            n--;
+        }
+        return keys;
+    }
+
+    function getRecentActiveIds(n) {
+        const sundays = getLastSundays(n);
+        const ids = new Set();
+        for (const key of sundays) {
+            const att = getAttendanceForDate(key);
+            for (const entry of att) {
+                ids.add(entry.id);
+            }
+        }
+        return ids;
+    }
+
+    function getPersonServiceHistory(personId, n) {
+        const sundays = getLastSundays(n);
+        let svc1 = 0, svc2 = 0;
+        for (const key of sundays) {
+            const att = getAttendanceForDate(key);
+            for (const entry of att) {
+                if (entry.id === personId && entry.service) {
+                    if (entry.service === '1') svc1++;
+                    else if (entry.service === '2') svc2++;
+                }
+            }
+        }
+        return { svc1, svc2 };
+    }
+
     function isCheckedIn(p) { return getAttendance().some(a => a.id === p.id); }
 
-    function logAttendance() {
-        if (!selectedPerson) return;
+    function logAttendance(person) {
+        const p = person || selectedPerson;
+        if (!p) return;
         const att = getAttendance();
-        if (att.some(a => a.id === selectedPerson.id)) {
-            toast('Reprinted (' + (selectedPerson.english || selectedPerson.chinese) + ')');
+        if (att.some(a => a.id === p.id)) {
+            if (!person) toast('Reprinted (' + (p.english || p.chinese) + ')');
         } else {
             const now = new Date();
             att.push({
-                id: selectedPerson.id,
-                chinese: selectedPerson.chinese || '',
-                english: selectedPerson.english || '',
+                id: p.id,
+                chinese: p.chinese || '',
+                english: p.english || '',
                 time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-                timestamp: now.toISOString()
+                timestamp: now.toISOString(),
+                service: detectService()
             });
             localStorage.setItem(todayKey(), JSON.stringify(att));
-            toast('Checked in: ' + (selectedPerson.english || selectedPerson.chinese));
+            if (!person) toast('Checked in: ' + (p.english || p.chinese));
             syncAttendance(att[att.length - 1]);
         }
         updateBadge();
@@ -2462,7 +2666,14 @@ function doGet(e) {
 
     function setFilter(f, btn) {
         serviceFilter = f;
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.filters .filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderGrid();
+    }
+
+    function setStatusFilter(f, btn) {
+        statusFilter = f;
+        document.querySelectorAll('.status-filters .filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         renderGrid();
     }
