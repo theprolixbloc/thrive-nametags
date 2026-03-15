@@ -1,0 +1,1668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1e293b">
+    <title>Thrive Name Tags</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #f1f5f9;
+            --surface: #ffffff;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #10b981;
+            --success-bg: #ecfdf5;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --text: #1e293b;
+            --text-secondary: #64748b;
+            --border: #e2e8f0;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1);
+            --shadow-lg: 0 4px 12px rgba(0,0,0,0.15);
+            --radius: 12px;
+        }
+
+        html, body {
+            height: 100%;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            -webkit-tap-highlight-color: transparent;
+            overflow: hidden;
+        }
+
+        #app {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        header h1 { font-size: 17px; font-weight: 700; }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .attendance-badge {
+            background: var(--success-bg);
+            color: var(--success);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 20px;
+            cursor: pointer;
+        }
+
+        .icon-btn {
+            width: 34px;
+            height: 34px;
+            border: none;
+            background: var(--bg);
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            color: var(--text-secondary);
+            transition: background 0.15s;
+        }
+
+        .icon-btn:active { background: var(--border); }
+
+        /* Printer Bar */
+        .printer-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .printer-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--border);
+            flex-shrink: 0;
+        }
+
+        .status-dot.connected { background: var(--success); }
+        .status-dot.connecting { background: var(--warning); animation: pulse 1s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .printer-name {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .connect-btn {
+            padding: 6px 14px;
+            border: 1.5px solid var(--primary);
+            background: none;
+            color: var(--primary);
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+
+        .connect-btn:active { background: var(--primary); color: white; }
+        .connect-btn.connected { border-color: var(--success); color: var(--success); }
+
+        .ble-note {
+            font-size: 12px;
+            color: #92400e;
+            padding: 8px 16px;
+            background: #fffbeb;
+            border-bottom: 1px solid #fde68a;
+            flex-shrink: 0;
+            display: none;
+            line-height: 1.4;
+        }
+
+        .ble-note.visible { display: block; }
+
+        /* Search */
+        .search-area {
+            padding: 10px 16px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-box input {
+            width: 100%;
+            height: 44px;
+            padding: 0 44px 0 16px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 16px;
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            outline: none;
+            transition: border-color 0.15s;
+            background: var(--bg);
+        }
+
+        .search-box input:focus {
+            border-color: var(--primary);
+            background: var(--surface);
+        }
+
+        .search-box .clear-btn {
+            position: absolute;
+            right: 4px;
+            top: 4px;
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 18px;
+            color: var(--text-secondary);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+        }
+
+        .search-box .clear-btn.visible { display: flex; }
+
+        .filters {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .filter-btn {
+            padding: 5px 12px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: all 0.15s;
+        }
+
+        .filter-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        /* Name Grid */
+        .name-grid {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 10px 16px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 8px;
+            align-content: start;
+        }
+
+        .name-card {
+            background: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.15s;
+            position: relative;
+            min-height: 64px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .name-card:active {
+            transform: scale(0.97);
+            border-color: var(--primary);
+        }
+
+        .name-card.checked-in {
+            border-color: var(--success);
+            background: var(--success-bg);
+        }
+
+        .name-card .cn {
+            font-family: 'Noto Sans TC', sans-serif;
+            font-size: 17px;
+            font-weight: 700;
+            line-height: 1.3;
+        }
+
+        .name-card .en {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-top: 1px;
+        }
+
+        .name-card .check-mark {
+            position: absolute;
+            top: 4px;
+            right: 6px;
+            color: var(--success);
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+        }
+
+        /* FAB */
+        .fab {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            font-size: 26px;
+            font-weight: 300;
+            cursor: pointer;
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .fab:active { transform: scale(0.92); }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+            padding: 16px;
+        }
+
+        .modal-overlay.active { opacity: 1; visibility: visible; }
+
+        .modal {
+            background: var(--surface);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 420px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+            transform: scale(0.95);
+            transition: transform 0.2s;
+        }
+
+        .modal-overlay.active .modal { transform: scale(1); }
+        .modal.wide { max-width: 580px; }
+
+        .modal-header {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-header h2 { font-size: 16px; font-weight: 700; }
+        .modal-body { padding: 16px 20px; }
+
+        /* Preview */
+        .preview-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .canvas-wrapper {
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+            width: 100%;
+            max-width: 380px;
+            aspect-ratio: 3 / 2;
+        }
+
+        .canvas-wrapper canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .print-actions {
+            display: flex;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .btn {
+            flex: 1;
+            height: 46px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.15s;
+        }
+
+        .btn:active { transform: scale(0.97); }
+        .btn:disabled { opacity: 0.5; pointer-events: none; }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:active { background: var(--primary-hover); }
+        .btn-success { background: var(--success); color: white; }
+        .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+        .btn-cancel { background: none; color: var(--text-secondary); flex: 0; padding: 0 16px; }
+        .btn-danger { background: var(--danger); color: white; }
+
+        .btn.printing {
+            background: var(--warning);
+            animation: pulse 1s infinite;
+        }
+
+        /* Attendance */
+        .attendance-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .attendance-item:last-child { border-bottom: none; }
+
+        .attendance-item .names { display: flex; flex-direction: column; }
+
+        .attendance-item .names .cn {
+            font-family: 'Noto Sans TC', sans-serif;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .attendance-item .names .en { font-size: 12px; color: var(--text-secondary); }
+        .attendance-item .time { font-size: 12px; color: var(--text-secondary); }
+
+        .attendance-actions {
+            padding: 14px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Forms */
+        .form-group { margin-bottom: 12px; }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .form-group input {
+            width: 100%;
+            height: 44px;
+            padding: 0 14px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 16px;
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            outline: none;
+        }
+
+        .form-group input:focus { border-color: var(--primary); }
+
+        .form-actions { display: flex; gap: 8px; margin-top: 14px; }
+
+        /* Settings */
+        .setting-row { margin-bottom: 14px; }
+
+        .setting-row label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .setting-row input {
+            width: 100%;
+            height: 40px;
+            padding: 0 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .setting-row .hint { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+
+        .script-code {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-family: 'SF Mono', Menlo, monospace;
+            overflow-x: auto;
+            white-space: pre;
+            margin-top: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        /* Print Status */
+        .print-status {
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 4px;
+        }
+
+        .print-status.success { color: var(--success); }
+        .print-status.error { color: var(--danger); }
+        .print-status.info { color: var(--primary); }
+
+        /* Loading */
+        .loading {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 28px;
+            height: 28px;
+            border: 3px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--text);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 500;
+            opacity: 0;
+            transition: all 0.3s;
+            z-index: 200;
+            pointer-events: none;
+            max-width: 90%;
+            text-align: center;
+        }
+
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        #print-frame { position: absolute; width: 0; height: 0; border: 0; }
+
+        @media (min-width: 768px) {
+            .name-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Thrive Name Tags</h1>
+            <div class="header-right">
+                <span class="attendance-badge" id="badge" onclick="showAttendance()">0 checked in</span>
+                <button class="icon-btn" onclick="showSettings()" title="Settings">&#9881;</button>
+                <button class="icon-btn" onclick="refreshData()" title="Refresh" id="refresh-btn">&#8635;</button>
+            </div>
+        </header>
+
+        <!-- Printer Connection Bar -->
+        <div class="printer-bar">
+            <div class="printer-status">
+                <div class="status-dot" id="printerDot"></div>
+                <span class="printer-name" id="printerName">No printer</span>
+            </div>
+            <button class="connect-btn" id="connectBtn" onclick="connectPrinter()">Connect Printer</button>
+        </div>
+        <div class="ble-note" id="bleNote"></div>
+
+        <div class="search-area">
+            <div class="search-box">
+                <input type="text" id="search" placeholder="Search name..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                <button class="clear-btn" id="clear-search" onclick="clearSearch()">&#10005;</button>
+            </div>
+            <div class="filters">
+                <button class="filter-btn active" data-filter="all" onclick="setFilter('all',this)">All</button>
+                <button class="filter-btn" data-filter="1" onclick="setFilter('1',this)">1st Service</button>
+                <button class="filter-btn" data-filter="2" onclick="setFilter('2',this)">2nd Service</button>
+            </div>
+        </div>
+
+        <div class="name-grid" id="name-grid">
+            <div class="loading"><div class="spinner"></div>Loading names...</div>
+        </div>
+
+        <button class="fab" onclick="showNewPerson()" title="Add new person">+</button>
+    </div>
+
+    <!-- Preview / Print Modal -->
+    <div class="modal-overlay" id="preview-overlay" onclick="closeModal('preview-overlay',event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-body">
+                <div class="preview-container">
+                    <div class="canvas-wrapper">
+                        <canvas id="label-canvas"></canvas>
+                    </div>
+                    <div id="print-status" class="print-status" style="display:none;"></div>
+                    <div class="print-actions" id="print-actions">
+                        <!-- Buttons reordered by platform in JS -->
+                    </div>
+                    <div id="print-tip" style="display:none;font-size:11px;color:var(--text-secondary);text-align:center;line-height:1.4;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Attendance Modal -->
+    <div class="modal-overlay" id="attendance-overlay" onclick="closeModal('attendance-overlay',event)">
+        <div class="modal wide" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2 id="attendance-title">Today's Attendance</h2>
+                <button class="icon-btn" onclick="closeModalDirect('attendance-overlay')">&#10005;</button>
+            </div>
+            <div class="modal-body" id="attendance-body"></div>
+            <div class="attendance-actions">
+                <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
+                <button class="btn btn-secondary" onclick="clearAttendance()">Clear Today</button>
+                <button class="btn btn-cancel" onclick="closeModalDirect('attendance-overlay')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Person Modal -->
+    <div class="modal-overlay" id="new-overlay" onclick="closeModal('new-overlay',event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>New Person</h2>
+                <button class="icon-btn" onclick="closeModalDirect('new-overlay')">&#10005;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Chinese Name (optional)</label>
+                    <input type="text" id="new-chinese" placeholder="e.g. &#20237;&#20426;&#24421;" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>English Name (optional)</label>
+                    <input type="text" id="new-english" placeholder="e.g. Patrick" autocomplete="off">
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" onclick="createNewTag()">Preview Tag</button>
+                    <button class="btn btn-cancel" onclick="closeModalDirect('new-overlay')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-overlay" onclick="closeModal('settings-overlay',event)">
+        <div class="modal wide" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="icon-btn" onclick="closeModalDirect('settings-overlay')">&#10005;</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-row">
+                    <label>Google Apps Script URL (attendance sync)</label>
+                    <input type="url" id="script-url" placeholder="https://script.google.com/macros/s/.../exec">
+                    <div class="hint">Optional. Syncs attendance to your Google Sheet automatically.</div>
+                </div>
+                <div class="setting-row">
+                    <label>BLE Service UUID</label>
+                    <input type="text" id="setting-service-uuid" placeholder="000000ff-0000-1000-8000-00805f9b34fb">
+                    <div class="hint">Auto-detected on first connect. Change only if needed.</div>
+                </div>
+                <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-bottom:14px;">Save Settings</button>
+
+                <details style="margin-bottom:14px;">
+                    <summary style="cursor:pointer;font-weight:600;font-size:13px;">BLE Debug: Scan for Services</summary>
+                    <p style="font-size:12px;color:var(--text-secondary);margin:8px 0;">If auto-connect fails, scan to find your printer's UUIDs.</p>
+                    <button class="btn btn-secondary" onclick="bleDebugScan()" style="width:100%;">Scan BLE Device</button>
+                    <pre id="ble-debug-log" style="font-size:11px;background:var(--bg);padding:10px;border-radius:8px;margin-top:8px;max-height:200px;overflow:auto;display:none;"></pre>
+                </details>
+
+                <details>
+                    <summary style="cursor:pointer;font-weight:600;font-size:13px;">Setup: Google Apps Script for Attendance</summary>
+                    <ol style="font-size:12px;color:var(--text-secondary);padding-left:20px;line-height:1.8;margin-top:8px;">
+                        <li>Open your <a href="https://docs.google.com/spreadsheets/d/1emTIXAFHBae-r6Zo3W48I_PBSMuPjC25dPnmNptz-bg/edit" target="_blank">Google Sheet</a></li>
+                        <li>Go to <b>Extensions &gt; Apps Script</b></li>
+                        <li>Delete existing code, paste the code below</li>
+                        <li>Click <b>Deploy &gt; New deployment</b></li>
+                        <li>Type: <b>Web app</b>, Execute as: <b>Me</b>, Access: <b>Anyone</b></li>
+                        <li>Deploy, copy the URL, paste above</li>
+                    </ol>
+                    <div class="script-code" id="script-code">function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Attendance');
+  if (!sheet) {
+    sheet = ss.insertSheet('Attendance');
+    sheet.appendRow(['Date', 'Time', 'Chinese Name', 'English Name']);
+    sheet.getRange('1:1').setFontWeight('bold');
+  }
+  sheet.appendRow([data.date, data.time, data.chinese || '', data.english || '']);
+  return ContentService.createTextOutput(JSON.stringify({status:'ok'}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput('Attendance script is running.');
+}</div>
+                    <button class="btn btn-secondary" onclick="copyScript()" style="width:100%;margin-top:8px;">Copy Script Code</button>
+                </details>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <iframe id="print-frame"></iframe>
+
+    <script>
+    // ============================================================
+    // CONFIG
+    // ============================================================
+    const SHEET_ID = '1emTIXAFHBae-r6Zo3W48I_PBSMuPjC25dPnmNptz-bg';
+    const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
+    const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbynBn0BSGqxQqCLKDr-cv7Vakn70KoWxbVYkG_bMSyuuvevQLGSDP0hBPSS9fh3Q9vh/exec';
+    const LABEL_W = 609;  // 3" at 203 DPI
+    const LABEL_H = 406;  // 2" at 203 DPI
+    const CHINESE_FONT = '"Noto Sans TC", "PingFang TC", "Microsoft YaHei", sans-serif';
+    const ENGLISH_FONT = '"Inter", -apple-system, BlinkMacSystemFont, sans-serif';
+    const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const HAS_BLE = !!navigator.bluetooth;
+
+    // ============================================================
+    // STATE
+    // ============================================================
+    let people = [];
+    let selectedPerson = null;
+    let serviceFilter = 'all';
+
+    // BLE Printer State
+    const BLE = {
+        device: null,
+        server: null,
+        writeChar: null,
+        connected: false,
+        config: loadBLEConfig()
+    };
+
+    function loadBLEConfig() {
+        try {
+            const c = JSON.parse(localStorage.getItem('thrive_ble_config'));
+            return c || defaultBLEConfig();
+        } catch { return defaultBLEConfig(); }
+    }
+
+    function defaultBLEConfig() {
+        return {
+            serviceUuid: '000000ff-0000-1000-8000-00805f9b34fb',
+            writeUuid: ''
+        };
+    }
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    async function init() {
+        setupSearch();
+        try { await document.fonts.ready; } catch {}
+        await loadPeople();
+        renderGrid();
+        updateBadge();
+        setupPlatform();
+
+        // Auto-set the script URL if not already configured
+        if (!localStorage.getItem('thrive_script_url') && DEFAULT_SCRIPT_URL) {
+            localStorage.setItem('thrive_script_url', DEFAULT_SCRIPT_URL);
+        }
+        document.getElementById('script-url').value = localStorage.getItem('thrive_script_url') || '';
+        document.getElementById('setting-service-uuid').value = BLE.config.serviceUuid;
+    }
+
+    function setupPlatform() {
+        const note = document.getElementById('bleNote');
+        if (!HAS_BLE) {
+            if (IS_IOS) {
+                note.innerHTML = '<b>iPad tip:</b> Safari lacks Bluetooth. Use <b>Bluefy</b> browser for BLE printing, or tap <b>Share</b> to send the image to the Nelko app.';
+            } else {
+                note.innerHTML = 'Web Bluetooth not available in this browser. Use <b>Chrome</b> on Android or <b>Bluefy</b> on iPad.';
+            }
+            note.classList.add('visible');
+        } else if (IS_IOS) {
+            note.innerHTML = '<b>Important:</b> Close the Nelko app before connecting here. iOS only allows one app to connect via Bluetooth at a time.';
+            note.classList.add('visible');
+        }
+    }
+
+    // ============================================================
+    // DATA LOADING
+    // ============================================================
+    async function loadPeople() {
+        try {
+            const resp = await fetch(CSV_URL);
+            if (!resp.ok) throw new Error('Fetch failed');
+            const text = await resp.text();
+            people = processRows(parseCSV(text));
+            localStorage.setItem('thrive_cache', JSON.stringify(people));
+        } catch (e) {
+            const cached = localStorage.getItem('thrive_cache');
+            if (cached) {
+                people = JSON.parse(cached);
+                toast('Using cached data (offline)');
+            } else {
+                toast('Failed to load data');
+            }
+        }
+    }
+
+    function parseCSV(text) {
+        const rows = [];
+        let current = [], field = '', inQ = false;
+        for (let i = 0; i < text.length; i++) {
+            const c = text[i], n = text[i + 1];
+            if (inQ) {
+                if (c === '"' && n === '"') { field += '"'; i++; }
+                else if (c === '"') inQ = false;
+                else field += c;
+            } else {
+                if (c === '"') inQ = true;
+                else if (c === ',') { current.push(field); field = ''; }
+                else if (c === '\n' || (c === '\r' && n === '\n')) {
+                    current.push(field); field = '';
+                    rows.push(current); current = [];
+                    if (c === '\r') i++;
+                } else field += c;
+            }
+        }
+        if (field || current.length) { current.push(field); rows.push(current); }
+        return rows;
+    }
+
+    function processRows(rows) {
+        if (rows.length < 2) return [];
+        const seen = new Map();
+        const naSet = new Set(['na', 'n/a', '/', '']);
+
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (row.length < 3) continue;
+
+            let cn = (row[1] || '').trim();
+            let en = (row[2] || '').trim();
+            const svc = (row[5] || '').trim();
+
+            // Clean Chinese
+            if (naSet.has(cn.toLowerCase())) { cn = ''; }
+            else {
+                const m = cn.match(/[\u4e00-\u9fff\u3400-\u4dbf]+/g);
+                cn = m ? m.join('') : '';
+            }
+
+            // Clean English
+            if (naSet.has(en.toLowerCase())) { en = ''; }
+            else {
+                en = en.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, '')
+                    .replace(/[✨₍₎⁾ⁿ]/g, '').replace(/\s*[:;]\s*[)D(]/g, '').replace(/\s+/g, ' ').trim();
+            }
+
+            if (!cn && !en) continue;
+
+            let service = '';
+            if (svc.includes('First') || svc.includes('第一')) service = '1';
+            else if (svc.includes('Second') || svc.includes('第二')) service = '2';
+
+            const key = `${cn}|${en}`.toLowerCase();
+            seen.set(key, { chinese: cn, english: en, service, id: key });
+        }
+
+        return Array.from(seen.values()).sort((a, b) => {
+            const an = (a.english || a.chinese).toLowerCase();
+            const bn = (b.english || b.chinese).toLowerCase();
+            if (a.english && !b.english) return -1;
+            if (!a.english && b.english) return 1;
+            return an.localeCompare(bn);
+        });
+    }
+
+    // ============================================================
+    // GRID RENDERING
+    // ============================================================
+    function renderGrid() {
+        const q = document.getElementById('search').value.trim().toLowerCase();
+        const grid = document.getElementById('name-grid');
+
+        const filtered = people.filter(p => {
+            if (serviceFilter !== 'all' && p.service && p.service !== serviceFilter) return false;
+            if (q) {
+                return (p.chinese || '').toLowerCase().includes(q) ||
+                       (p.english || '').toLowerCase().includes(q);
+            }
+            return true;
+        });
+
+        if (!filtered.length) {
+            grid.innerHTML = '<div class="empty-state">No names found</div>';
+            return;
+        }
+
+        grid.innerHTML = filtered.map(p => {
+            const ci = isCheckedIn(p);
+            return `<div class="name-card ${ci ? 'checked-in' : ''}" onclick="selectPerson('${esc(p.id)}')">
+                ${ci ? '<span class="check-mark">&#10003;</span>' : ''}
+                ${p.chinese ? `<div class="cn">${escH(p.chinese)}</div>` : ''}
+                ${p.english ? `<div class="en">${escH(p.english)}</div>` : ''}
+            </div>`;
+        }).join('');
+    }
+
+    // ============================================================
+    // LABEL CANVAS
+    // ============================================================
+    function renderLabel(chinese, english, canvas) {
+        if (!canvas) canvas = document.getElementById('label-canvas');
+        canvas.width = LABEL_W;
+        canvas.height = LABEL_H;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, LABEL_W, LABEL_H);
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const margin = 30;
+        const maxW = LABEL_W - margin * 2;
+        const hasCN = !!chinese, hasEN = !!english;
+
+        if (hasCN && hasEN) {
+            const cnY = LABEL_H * 0.36;
+            const enY = LABEL_H * 0.72;
+            const cnS = fitText(ctx, chinese, maxW, 140, CHINESE_FONT, '700');
+            ctx.font = `700 ${cnS}px ${CHINESE_FONT}`;
+            ctx.fillText(chinese, LABEL_W / 2, cnY);
+            const enS = fitText(ctx, english, maxW, 72, ENGLISH_FONT, '600');
+            ctx.font = `600 ${enS}px ${ENGLISH_FONT}`;
+            ctx.fillText(english, LABEL_W / 2, enY);
+        } else if (hasCN) {
+            const s = fitText(ctx, chinese, maxW, 180, CHINESE_FONT, '700');
+            ctx.font = `700 ${s}px ${CHINESE_FONT}`;
+            ctx.fillText(chinese, LABEL_W / 2, LABEL_H / 2);
+        } else if (hasEN) {
+            const s = fitText(ctx, english, maxW, 110, ENGLISH_FONT, '700');
+            ctx.font = `700 ${s}px ${ENGLISH_FONT}`;
+            ctx.fillText(english, LABEL_W / 2, LABEL_H / 2);
+        }
+    }
+
+    function fitText(ctx, text, maxW, maxS, font, weight) {
+        let s = maxS;
+        ctx.font = `${weight} ${s}px ${font}`;
+        while (ctx.measureText(text).width > maxW && s > 14) {
+            s -= 2;
+            ctx.font = `${weight} ${s}px ${font}`;
+        }
+        return s;
+    }
+
+    // ============================================================
+    // BLUETOOTH PRINTER CONNECTION
+    // ============================================================
+    async function connectPrinter() {
+        if (!navigator.bluetooth) {
+            toast('Web Bluetooth not available. Use Chrome (Android) or Bluefy (iPad).');
+            return;
+        }
+
+        const btn = document.getElementById('connectBtn');
+        const dot = document.getElementById('printerDot');
+        btn.textContent = 'Scanning...';
+        dot.classList.add('connecting');
+        dot.classList.remove('connected');
+
+        const ALL_SERVICES = [
+            BLE.config.serviceUuid,
+            '000000ff-0000-1000-8000-00805f9b34fb',
+            '0000ff00-0000-1000-8000-00805f9b34fb',
+            '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+            'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+            '0000ae30-0000-1000-8000-00805f9b34fb',
+            '0000fee7-0000-1000-8000-00805f9b34fb',
+        ];
+
+        try {
+            let device;
+
+            // Step 1: Request device — try name filters first, then all
+            try {
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { namePrefix: 'Nelko' }, { namePrefix: 'nelko' }, { namePrefix: 'NELKO' },
+                        { namePrefix: 'PL70' }, { namePrefix: 'B21' }, { namePrefix: 'B1' },
+                        { namePrefix: 'NB' }, { namePrefix: 'Niimbot' },
+                    ],
+                    optionalServices: ALL_SERVICES
+                });
+            } catch (filterErr) {
+                // User may have cancelled, or no matching devices found
+                if (filterErr.name === 'NotFoundError' || (filterErr.message && filterErr.message.includes('cancel'))) {
+                    // Try again with all devices
+                    device = await navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true,
+                        optionalServices: ALL_SERVICES
+                    });
+                } else {
+                    throw filterErr;
+                }
+            }
+
+            btn.textContent = 'Connecting...';
+            console.log('[BLE] Selected device:', device.name, device.id);
+
+            // Step 2: Connect GATT with retry
+            let server;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    server = await device.gatt.connect();
+                    break;
+                } catch (gattErr) {
+                    console.warn(`[BLE] GATT connect attempt ${attempt}/3 failed:`, gattErr);
+                    if (attempt === 3) {
+                        throw new Error(
+                            IS_IOS
+                                ? 'Cannot connect. Make sure the Nelko app is FULLY CLOSED (swipe it away), then try again.'
+                                : 'GATT connect failed after 3 attempts. Is the printer on and in range?'
+                        );
+                    }
+                    await sleep(1000);
+                }
+            }
+
+            BLE.device = device;
+            BLE.server = server;
+            console.log('[BLE] GATT connected');
+
+            // Step 3: Discover services and find writable characteristic
+            btn.textContent = 'Finding services...';
+            let writeChar = null;
+            let foundServices = [];
+
+            // First try to enumerate all services (more reliable on some devices)
+            try {
+                const allServices = await server.getPrimaryServices();
+                foundServices = allServices.map(s => s.uuid);
+                console.log('[BLE] Discovered services:', foundServices);
+            } catch {
+                console.log('[BLE] Could not enumerate services, trying known UUIDs');
+            }
+
+            // Build the list of UUIDs to try: discovered ones first, then known ones
+            const uuidsToTry = [...new Set([...foundServices, ...ALL_SERVICES])];
+
+            for (const uuid of uuidsToTry) {
+                try {
+                    const svc = await server.getPrimaryService(uuid);
+                    const chars = await svc.getCharacteristics();
+                    console.log(`[BLE] Service ${uuid}: ${chars.length} characteristics`);
+
+                    for (const c of chars) {
+                        const props = [];
+                        if (c.properties.write) props.push('write');
+                        if (c.properties.writeWithoutResponse) props.push('writeNoResp');
+                        if (c.properties.read) props.push('read');
+                        if (c.properties.notify) props.push('notify');
+                        console.log(`[BLE]   Char ${c.uuid} [${props.join(', ')}]`);
+
+                        if (c.properties.writeWithoutResponse || c.properties.write) {
+                            writeChar = c;
+                            BLE.config.serviceUuid = uuid;
+                            BLE.config.writeUuid = c.uuid;
+                            localStorage.setItem('thrive_ble_config', JSON.stringify(BLE.config));
+                            document.getElementById('setting-service-uuid').value = uuid;
+                            break;
+                        }
+                    }
+                    if (writeChar) break;
+                } catch (svcErr) {
+                    // This UUID not available on the device, skip
+                }
+            }
+
+            if (!writeChar) {
+                const svcList = foundServices.length ? foundServices.join(', ') : 'none discovered';
+                throw new Error(`No writable characteristic. Services found: ${svcList}. Try BLE Debug in Settings.`);
+            }
+
+            // Step 4: Connected!
+            BLE.writeChar = writeChar;
+            BLE.connected = true;
+
+            dot.classList.remove('connecting');
+            dot.classList.add('connected');
+            document.getElementById('printerName').textContent = device.name || 'Printer';
+            btn.textContent = 'Connected';
+            btn.classList.add('connected');
+
+            device.addEventListener('gattserverdisconnected', () => {
+                BLE.connected = false;
+                BLE.writeChar = null;
+                dot.classList.remove('connected');
+                document.getElementById('printerName').textContent = 'Disconnected';
+                btn.textContent = 'Reconnect';
+                btn.classList.remove('connected');
+                toast('Printer disconnected');
+            });
+
+            toast('Printer connected! (' + (device.name || 'BLE') + ')');
+            console.log('[BLE] Ready. Service:', BLE.config.serviceUuid, 'Char:', BLE.config.writeUuid);
+
+        } catch (e) {
+            dot.classList.remove('connecting');
+            btn.textContent = 'Connect Printer';
+            const msg = e?.message || String(e) || 'Unknown error';
+
+            // Don't show error if user just cancelled the picker
+            if (e?.name === 'NotFoundError' || msg.includes('cancel') || msg.includes('dismissed')) {
+                return;
+            }
+
+            console.error('[BLE] Connection error:', e);
+
+            // Show helpful message based on the error type
+            if (msg.includes('GATT') || msg.includes('connect') || msg === 'undefined' || !e?.message) {
+                if (IS_IOS) {
+                    toast('Cannot connect. Close the Nelko app completely (swipe away), then retry.');
+                } else {
+                    toast('Connection failed. Is the printer on? Is another app using it?');
+                }
+            } else {
+                toast(msg);
+            }
+        }
+    }
+
+    // ============================================================
+    // BLE PRINTING PIPELINE
+    // ============================================================
+    function canvasToMonoBitmap(canvas) {
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const px = imgData.data;
+        const w = canvas.width, h = canvas.height;
+        const bpl = Math.ceil(w / 8);
+        const bitmap = new Uint8Array(bpl * h);
+
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const i = (y * w + x) * 4;
+                const gray = 0.299 * px[i] + 0.587 * px[i+1] + 0.114 * px[i+2];
+                if (gray < 128) {
+                    bitmap[y * bpl + Math.floor(x / 8)] |= (1 << (7 - (x % 8)));
+                }
+            }
+        }
+        return { bitmap, bytesPerLine: bpl, width: w, height: h };
+    }
+
+    function buildRasterCommand(bd) {
+        const { bitmap, bytesPerLine, height } = bd;
+        const header = new Uint8Array([
+            0x1B, 0x40,                         // ESC @ — Init
+            0x1D, 0x76, 0x30, 0x00,            // GS v 0 — Raster
+            bytesPerLine & 0xFF, (bytesPerLine >> 8) & 0xFF,
+            height & 0xFF, (height >> 8) & 0xFF,
+        ]);
+        const cmd = new Uint8Array(header.length + bitmap.length + 4);
+        cmd.set(header, 0);
+        cmd.set(bitmap, header.length);
+        cmd.set([0x1B, 0x64, 0x03, 0x0A], header.length + bitmap.length);
+        return cmd;
+    }
+
+    function buildNelkoCommand(bd) {
+        const { bitmap, bytesPerLine, height } = bd;
+        const chunks = [];
+        chunks.push(new Uint8Array([0x1B, 0x40]));
+        chunks.push(new Uint8Array([
+            0x1B, 0x57,
+            LABEL_W & 0xFF, (LABEL_W >> 8) & 0xFF,
+            LABEL_H & 0xFF, (LABEL_H >> 8) & 0xFF,
+        ]));
+        for (let y = 0; y < height; y++) {
+            const hdr = new Uint8Array([0x1B, 0x2A, 0x21, bytesPerLine & 0xFF, (bytesPerLine >> 8) & 0xFF]);
+            const line = bitmap.slice(y * bytesPerLine, (y + 1) * bytesPerLine);
+            const buf = new Uint8Array(hdr.length + line.length + 1);
+            buf.set(hdr, 0);
+            buf.set(line, hdr.length);
+            buf[buf.length - 1] = 0x0A;
+            chunks.push(buf);
+        }
+        chunks.push(new Uint8Array([0x1B, 0x64, 0x02, 0x0A]));
+        return chunks;
+    }
+
+    async function sendToPrinter(data) {
+        if (!BLE.writeChar) throw new Error('Printer not connected');
+        const CHUNK = 512, DELAY = 20;
+
+        if (data instanceof Uint8Array) {
+            for (let off = 0; off < data.length; off += CHUNK) {
+                const chunk = data.slice(off, Math.min(off + CHUNK, data.length));
+                if (BLE.writeChar.properties.writeWithoutResponse) {
+                    await BLE.writeChar.writeValueWithoutResponse(chunk);
+                } else {
+                    await BLE.writeChar.writeValue(chunk);
+                }
+                if (off + CHUNK < data.length) await sleep(DELAY);
+            }
+        } else if (Array.isArray(data)) {
+            for (const part of data) {
+                for (let off = 0; off < part.length; off += CHUNK) {
+                    const chunk = part.slice(off, Math.min(off + CHUNK, part.length));
+                    if (BLE.writeChar.properties.writeWithoutResponse) {
+                        await BLE.writeChar.writeValueWithoutResponse(chunk);
+                    } else {
+                        await BLE.writeChar.writeValue(chunk);
+                    }
+                    await sleep(DELAY);
+                }
+            }
+        }
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // ============================================================
+    // PRINT ACTIONS
+    // ============================================================
+    function selectPerson(id) {
+        const p = people.find(x => x.id === id);
+        if (!p) return;
+        selectedPerson = p;
+        showPreview(p.chinese, p.english);
+    }
+
+    function showPreview(cn, en) {
+        renderLabel(cn, en);
+        const st = document.getElementById('print-status');
+        const tip = document.getElementById('print-tip');
+        if (selectedPerson && isCheckedIn(selectedPerson)) {
+            st.style.display = 'block';
+            st.className = 'print-status info';
+            st.textContent = 'Already printed today';
+        } else {
+            st.style.display = 'none';
+        }
+
+        // Build print action buttons dynamically based on what's available
+        const actions = document.getElementById('print-actions');
+        let buttons = '';
+
+        if (BLE.connected) {
+            // BLE connected = primary action
+            buttons += '<button class="btn btn-primary" onclick="doBLEPrint()" id="btn-ble-print">Print</button>';
+            buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
+            tip.style.display = 'none';
+        } else if (IS_IOS && !HAS_BLE) {
+            // iPad Safari — no BLE, share is the main action
+            buttons += '<button class="btn btn-primary" onclick="doShare()">Share to Nelko App</button>';
+            buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
+            tip.style.display = 'block';
+            tip.innerHTML = 'Tap <b>Share to Nelko App</b>, select the Nelko app from the share sheet, then print from there.';
+        } else if (HAS_BLE && !BLE.connected) {
+            // Has BLE support but not connected
+            buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
+            buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
+            tip.style.display = 'block';
+            tip.textContent = 'Connect the printer first for direct BLE printing.';
+        } else {
+            // Generic fallback
+            buttons += '<button class="btn btn-primary" onclick="doShare()">Share</button>';
+            buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
+            tip.style.display = 'none';
+        }
+
+        buttons += '<button class="btn btn-cancel" onclick="closeModalDirect(\'preview-overlay\')">Cancel</button>';
+        actions.innerHTML = buttons;
+
+        document.getElementById('preview-overlay').classList.add('active');
+    }
+
+    async function doBLEPrint() {
+        if (!BLE.connected) { toast('Connect printer first'); return; }
+
+        const btn = document.getElementById('btn-ble-print');
+        const st = document.getElementById('print-status');
+        if (btn) { btn.disabled = true; btn.textContent = 'Printing...'; btn.className = 'btn printing'; }
+        st.style.display = 'block';
+        st.className = 'print-status info';
+        st.textContent = 'Sending to printer...';
+
+        try {
+            const canvas = document.getElementById('label-canvas');
+            const bd = canvasToMonoBitmap(canvas);
+
+            // Try ESC/POS raster first
+            let printed = false;
+            try {
+                await sendToPrinter(buildRasterCommand(bd));
+                printed = true;
+            } catch (e1) {
+                console.warn('[BLE] ESC/POS failed, trying Nelko protocol:', e1);
+                st.textContent = 'Trying alternate protocol...';
+            }
+
+            if (!printed) {
+                await sendToPrinter(buildNelkoCommand(bd));
+            }
+
+            st.className = 'print-status success';
+            st.textContent = 'Printed!';
+            if (btn) { btn.textContent = 'Done!'; btn.className = 'btn btn-success'; }
+
+            logAttendance();
+            setTimeout(() => closeModalDirect('preview-overlay'), 800);
+
+        } catch (e) {
+            const msg = e?.message || String(e) || 'Unknown error';
+            st.className = 'print-status error';
+            st.textContent = 'Print failed: ' + msg + '. Try Share instead.';
+            if (btn) { btn.disabled = false; btn.textContent = 'Retry'; btn.className = 'btn btn-danger'; }
+            console.error('[BLE] Print error:', e);
+        }
+    }
+
+    async function doBrowserPrint() {
+        const canvas = document.getElementById('label-canvas');
+        const dataUrl = canvas.toDataURL('image/png');
+        const iframe = document.getElementById('print-frame');
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        doc.open();
+        doc.write(`<!DOCTYPE html><html><head><style>
+            @page { size: 3in 2in; margin: 0; }
+            * { margin: 0; padding: 0; }
+            html, body { width: 3in; height: 2in; overflow: hidden; }
+            img { width: 3in; height: 2in; display: block; }
+        </style></head><body><img src="${dataUrl}"></body></html>`);
+        doc.close();
+        await sleep(100);
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        logAttendance();
+        closeModalDirect('preview-overlay');
+    }
+
+    async function doShare() {
+        const canvas = document.getElementById('label-canvas');
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        const name = selectedPerson ? (selectedPerson.english || selectedPerson.chinese) : 'nametag';
+        const filename = `nametag-${name}.png`;
+
+        if (navigator.share) {
+            try {
+                const file = new File([blob], filename, { type: 'image/png' });
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: 'Name Tag' });
+                    logAttendance();
+                    closeModalDirect('preview-overlay');
+                    return;
+                }
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+            }
+        }
+
+        // Fallback: download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.download = filename;
+        a.href = url;
+        a.click();
+        URL.revokeObjectURL(url);
+        logAttendance();
+        closeModalDirect('preview-overlay');
+    }
+
+    // ============================================================
+    // ATTENDANCE
+    // ============================================================
+    function todayKey() {
+        const d = new Date();
+        return `thrive_att_${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+
+    function getAttendance() {
+        try { return JSON.parse(localStorage.getItem(todayKey()) || '[]'); } catch { return []; }
+    }
+
+    function isCheckedIn(p) { return getAttendance().some(a => a.id === p.id); }
+
+    function logAttendance() {
+        if (!selectedPerson) return;
+        const att = getAttendance();
+        if (att.some(a => a.id === selectedPerson.id)) {
+            toast('Reprinted (' + (selectedPerson.english || selectedPerson.chinese) + ')');
+        } else {
+            const now = new Date();
+            att.push({
+                id: selectedPerson.id,
+                chinese: selectedPerson.chinese || '',
+                english: selectedPerson.english || '',
+                time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                timestamp: now.toISOString()
+            });
+            localStorage.setItem(todayKey(), JSON.stringify(att));
+            toast('Checked in: ' + (selectedPerson.english || selectedPerson.chinese));
+            syncAttendance(att[att.length - 1]);
+        }
+        updateBadge();
+        renderGrid();
+    }
+
+    async function syncAttendance(entry) {
+        const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+        if (!url) return;
+        try {
+            await fetch(url, {
+                method: 'POST', mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    date: new Date().toLocaleDateString('en-US'),
+                    time: entry.time,
+                    chinese: entry.chinese,
+                    english: entry.english
+                })
+            });
+        } catch {}
+    }
+
+    function updateBadge() {
+        document.getElementById('badge').textContent = getAttendance().length + ' checked in';
+    }
+
+    function showAttendance() {
+        const att = getAttendance();
+        const body = document.getElementById('attendance-body');
+        if (!att.length) {
+            body.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">No one checked in yet.</div>';
+        } else {
+            body.innerHTML = att.map(a => `<div class="attendance-item">
+                <div class="names">
+                    ${a.chinese ? `<span class="cn">${escH(a.chinese)}</span>` : ''}
+                    ${a.english ? `<span class="en">${escH(a.english)}</span>` : ''}
+                </div>
+                <span class="time">${escH(a.time)}</span>
+            </div>`).join('');
+        }
+        const d = new Date();
+        document.getElementById('attendance-title').textContent =
+            `Attendance ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${att.length})`;
+        document.getElementById('attendance-overlay').classList.add('active');
+    }
+
+    function exportCSV() {
+        const att = getAttendance();
+        if (!att.length) { toast('No data'); return; }
+        let csv = '\ufeffChinese Name,English Name,Time\n';
+        att.forEach(a => csv += `"${a.chinese}","${a.english}","${a.time}"\n`);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.download = `attendance-${new Date().toISOString().slice(0,10)}.csv`;
+        a.href = URL.createObjectURL(blob);
+        a.click();
+        toast('CSV exported');
+    }
+
+    function clearAttendance() {
+        if (!confirm('Clear today\'s attendance?')) return;
+        localStorage.removeItem(todayKey());
+        updateBadge();
+        renderGrid();
+        closeModalDirect('attendance-overlay');
+        toast('Cleared');
+    }
+
+    // ============================================================
+    // NEW PERSON
+    // ============================================================
+    function showNewPerson() {
+        document.getElementById('new-chinese').value = '';
+        document.getElementById('new-english').value = '';
+        document.getElementById('new-overlay').classList.add('active');
+        document.getElementById('new-chinese').focus();
+    }
+
+    function createNewTag() {
+        const cn = document.getElementById('new-chinese').value.trim();
+        const en = document.getElementById('new-english').value.trim();
+        if (!cn && !en) { toast('Enter at least one name'); return; }
+        selectedPerson = { id: `${cn}|${en}`.toLowerCase(), chinese: cn, english: en, service: '' };
+        closeModalDirect('new-overlay');
+        showPreview(cn, en);
+    }
+
+    // ============================================================
+    // SETTINGS
+    // ============================================================
+    function showSettings() {
+        document.getElementById('settings-overlay').classList.add('active');
+    }
+
+    function saveSettings() {
+        const url = document.getElementById('script-url').value.trim();
+        const svc = document.getElementById('setting-service-uuid').value.trim();
+        if (url) localStorage.setItem('thrive_script_url', url);
+        else localStorage.removeItem('thrive_script_url');
+        if (svc) { BLE.config.serviceUuid = svc; localStorage.setItem('thrive_ble_config', JSON.stringify(BLE.config)); }
+        closeModalDirect('settings-overlay');
+        toast('Settings saved');
+    }
+
+    function copyScript() {
+        navigator.clipboard.writeText(document.getElementById('script-code').textContent)
+            .then(() => toast('Copied'));
+    }
+
+    // ============================================================
+    // BLE DEBUG
+    // ============================================================
+    async function bleDebugScan() {
+        const log = document.getElementById('ble-debug-log');
+        log.style.display = 'block';
+        log.textContent = 'Requesting device...\n';
+
+        if (!navigator.bluetooth) {
+            log.textContent += 'ERROR: Web Bluetooth not available.\n';
+            return;
+        }
+
+        try {
+            const device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [0x00FF, 0x18F0, '49535343-fe7d-4ae5-8fa9-9fafd205e455', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2']
+            });
+
+            log.textContent += `Device: ${device.name || 'unnamed'}\n`;
+            log.textContent += 'Connecting GATT...\n';
+
+            const server = await device.gatt.connect();
+            let services;
+            try {
+                services = await server.getPrimaryServices();
+            } catch {
+                log.textContent += 'Could not enumerate services.\n';
+                return;
+            }
+
+            for (const svc of services) {
+                log.textContent += `\nService: ${svc.uuid}\n`;
+                try {
+                    const chars = await svc.getCharacteristics();
+                    for (const c of chars) {
+                        const props = [];
+                        if (c.properties.read) props.push('read');
+                        if (c.properties.write) props.push('write');
+                        if (c.properties.writeWithoutResponse) props.push('writeNoResp');
+                        if (c.properties.notify) props.push('notify');
+                        log.textContent += `  Char: ${c.uuid} [${props.join(', ')}]\n`;
+                    }
+                } catch {
+                    log.textContent += '  (could not read characteristics)\n';
+                }
+            }
+
+            server.disconnect();
+            log.textContent += '\nDone. Copy the service UUID with a writable characteristic and paste it in settings.\n';
+
+        } catch (e) {
+            log.textContent += 'Error: ' + e.message + '\n';
+        }
+    }
+
+    // ============================================================
+    // UI HELPERS
+    // ============================================================
+    function setupSearch() {
+        const input = document.getElementById('search');
+        input.addEventListener('input', () => {
+            document.getElementById('clear-search').classList.toggle('visible', input.value.length > 0);
+            renderGrid();
+        });
+    }
+
+    function clearSearch() {
+        const input = document.getElementById('search');
+        input.value = '';
+        input.focus();
+        document.getElementById('clear-search').classList.remove('visible');
+        renderGrid();
+    }
+
+    function setFilter(f, btn) {
+        serviceFilter = f;
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderGrid();
+    }
+
+    async function refreshData() {
+        const btn = document.getElementById('refresh-btn');
+        btn.style.opacity = '0.5';
+        await loadPeople();
+        renderGrid();
+        updateBadge();
+        btn.style.opacity = '1';
+        toast(`Loaded ${people.length} names`);
+    }
+
+    function closeModal(id, e) { if (e.target === e.currentTarget) closeModalDirect(id); }
+
+    function closeModalDirect(id) {
+        document.getElementById(id).classList.remove('active');
+        if (id === 'preview-overlay') selectedPerson = null;
+    }
+
+    function escH(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    function esc(s) { return s.replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+    let toastTimer;
+    function toast(msg) {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+    }
+
+    // ============================================================
+    // START
+    // ============================================================
+    init();
+    </script>
+</body>
+</html>
