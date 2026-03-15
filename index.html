@@ -37,6 +37,16 @@
             color: var(--text);
             -webkit-tap-highlight-color: transparent;
             overflow: hidden;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            user-select: none;
+        }
+
+        input, textarea { -webkit-user-select: text; user-select: text; }
+
+        @media print {
+            body > *:not(#print-frame) { display: none !important; }
+            body::after { content: 'Printing is disabled for privacy.'; display: block; text-align: center; padding: 40px; font-size: 18px; }
         }
 
         #app {
@@ -819,18 +829,76 @@
             line-height: 1.2;
         }
 
+        /* Lock Screen */
+        #lock-screen {
+            position: fixed; inset: 0; z-index: 500;
+            background: var(--bg);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .lock-card {
+            background: var(--surface);
+            padding: 32px; border-radius: 16px;
+            box-shadow: var(--shadow-lg);
+            text-align: center;
+            max-width: 360px; width: 90%;
+        }
+        .lock-card h1 { font-size: 20px; margin-bottom: 12px; }
+        .lock-card p { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; line-height: 1.5; }
+        .lock-card .lock-sub { margin-top: 20px; font-size: 13px; }
+        .lock-card input {
+            width: 100%; padding: 12px;
+            border: 2px solid var(--border); border-radius: 8px;
+            font-size: 16px; margin: 8px 0; outline: none; text-align: center;
+            font-family: inherit;
+        }
+        .lock-card input:focus { border-color: var(--primary); }
+        .lock-card button { width: 100%; margin-top: 8px; }
+        .lock-error { color: var(--danger); font-size: 13px; margin-top: 8px; min-height: 18px; }
+
+        /* Admin-only elements: hidden unless body has admin-mode */
+        .admin-only { display: none !important; }
+        body.admin-mode .admin-only { display: inline-flex !important; }
+        body.admin-mode .admin-only-block { display: block !important; }
+
+        /* Audit / Device list tables */
+        .admin-table {
+            width: 100%; border-collapse: collapse; font-size: 12px;
+        }
+        .admin-table th, .admin-table td {
+            padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border);
+        }
+        .admin-table th { font-weight: 600; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; }
+        .admin-table td { word-break: break-all; }
+        .admin-table-wrap { max-height: 50vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
         @media (min-width: 768px) {
             .name-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
         }
     </style>
 </head>
 <body>
-    <div id="app">
+    <!-- Lock Screen (shown outside service hours for non-admins) -->
+    <div id="lock-screen" style="display:none;">
+        <div class="lock-card">
+            <h1>Thrive Name Tags</h1>
+            <p>This app is available during Sunday services<br>(9:00 AM &ndash; 1:30 PM).</p>
+            <p class="lock-sub">Admin access:</p>
+            <input type="password" id="lock-passphrase" placeholder="Enter passphrase" autocomplete="off"
+                   onkeydown="if(event.key==='Enter')unlockWithPassphrase()">
+            <button class="btn btn-primary" onclick="unlockWithPassphrase()">Unlock</button>
+            <div class="lock-error" id="lock-error"></div>
+        </div>
+    </div>
+
+    <div id="app" style="display:none;">
         <header>
             <h1>Thrive Name Tags</h1>
             <div class="header-right">
                 <span class="attendance-badge" id="badge" onclick="showAttendance()">0 checked in</span>
-                <button class="icon-btn" onclick="showManage()" title="Manage Names">&#9998;</button>
+                <button class="icon-btn admin-only" onclick="showAuditLog()" title="Audit Log">&#128203;</button>
+                <button class="icon-btn admin-only" onclick="showDeviceList()" title="Devices">&#128241;</button>
+                <button class="icon-btn admin-only" onclick="showManage()" title="Manage Names">&#9998;</button>
+                <button class="icon-btn" onclick="showAdminLogin()" title="Admin Login" id="admin-lock-btn">&#128274;</button>
                 <button class="icon-btn" onclick="showSettings()" title="Settings">&#9881;</button>
                 <button class="icon-btn" onclick="refreshData()" title="Refresh" id="refresh-btn">&#8635;</button>
             </div>
@@ -898,8 +966,8 @@
             </div>
             <div class="modal-body" id="attendance-body"></div>
             <div class="attendance-actions">
-                <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
-                <button class="btn btn-secondary" onclick="clearAttendance()">Clear Today</button>
+                <button class="btn btn-secondary admin-only" onclick="exportCSV()">Export CSV</button>
+                <button class="btn btn-secondary admin-only" onclick="clearAttendance()">Clear Today</button>
                 <button class="btn btn-cancel" onclick="closeModalDirect('attendance-overlay')">Close</button>
             </div>
         </div>
@@ -943,6 +1011,11 @@
                     <div class="hint">A default URL is built in. Only set this to override with a new deployment URL.</div>
                 </div>
                 <div class="setting-row">
+                    <label>Device Name</label>
+                    <input type="text" id="setting-device-name" placeholder="e.g. iPad-Front-Desk">
+                    <div class="hint">Identify this device in the admin panel.</div>
+                </div>
+                <div class="setting-row">
                     <label>BLE Service UUID</label>
                     <input type="text" id="setting-service-uuid" placeholder="000000ff-0000-1000-8000-00805f9b34fb">
                     <div class="hint">Auto-detected on first connect. Change only if needed.</div>
@@ -975,10 +1048,49 @@
     var sheet = ss.getSheetByName('Attendance');
     if (!sheet) {
       sheet = ss.insertSheet('Attendance');
-      sheet.appendRow(['Date','Time','Chinese Name','English Name']);
+      sheet.appendRow(['Date','Time','Chinese Name','English Name','Service','IsKid','IsNew','DeviceId','PersonId']);
       sheet.getRange('1:1').setFontWeight('bold');
     }
-    sheet.appendRow([data.date, data.time, data.chinese||'', data.english||'']);
+    sheet.appendRow([data.date, data.time, data.chinese||'', data.english||'',
+      data.service||'', data.isKid?'Y':'', data.isNew?'Y':'',
+      data.deviceId||'', data.personId||'']);
+    return ok({status:'ok'});
+  }
+
+  if (action === 'audit') {
+    var sheet = ss.getSheetByName('Audit');
+    if (!sheet) {
+      sheet = ss.insertSheet('Audit');
+      sheet.appendRow(['Timestamp','DeviceId','DeviceName','Action','Details']);
+      sheet.getRange('1:1').setFontWeight('bold');
+    }
+    sheet.appendRow([data.timestamp, data.deviceId||'', data.deviceName||'',
+      data.auditAction||'', data.details||'']);
+    return ok({status:'ok'});
+  }
+
+  if (action === 'heartbeat') {
+    var sheet = ss.getSheetByName('Devices');
+    if (!sheet) {
+      sheet = ss.insertSheet('Devices');
+      sheet.appendRow(['DeviceId','DeviceName','UserAgent','LastSeen','FirstSeen']);
+      sheet.getRange('1:1').setFontWeight('bold');
+    }
+    var rows = sheet.getDataRange().getValues();
+    var found = false;
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i][0] === data.deviceId) {
+        sheet.getRange(i+1,2).setValue(data.deviceName||'');
+        sheet.getRange(i+1,3).setValue(data.userAgent||'');
+        sheet.getRange(i+1,4).setValue(data.timestamp);
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      sheet.appendRow([data.deviceId, data.deviceName||'',
+        data.userAgent||'', data.timestamp, data.timestamp]);
+    }
     return ok({status:'ok'});
   }
 
@@ -1107,7 +1219,7 @@ function ok(obj) {
 }
 
 function doGet(e) {
-  return ContentService.createTextOutput('Script is running.');
+  return ContentService.createTextOutput('Thrive Name Tags API v2.0');
 }</div>
                     <button class="btn btn-secondary" onclick="copyScript()" style="width:100%;margin-top:8px;">Copy Script Code</button>
                 </details>
@@ -1145,6 +1257,58 @@ function doGet(e) {
         </div>
     </div>
 
+    <!-- Admin Login Modal -->
+    <div class="modal-overlay" id="admin-overlay" onclick="closeModal('admin-overlay',event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Admin Login</h2>
+                <button class="icon-btn" onclick="closeModalDirect('admin-overlay')">&#10005;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Passphrase</label>
+                    <input type="password" id="admin-passphrase" placeholder="Enter admin passphrase" autocomplete="off"
+                           onkeydown="if(event.key==='Enter')adminLogin()">
+                </div>
+                <div class="lock-error" id="admin-error"></div>
+                <div class="form-actions">
+                    <button class="btn btn-primary" onclick="adminLogin()">Login</button>
+                    <button class="btn btn-cancel" onclick="closeModalDirect('admin-overlay')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Audit Log Modal -->
+    <div class="modal-overlay" id="audit-overlay" onclick="closeModal('audit-overlay',event)">
+        <div class="modal wide" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Audit Log</h2>
+                <button class="icon-btn" onclick="closeModalDirect('audit-overlay')">&#10005;</button>
+            </div>
+            <div class="modal-body">
+                <div class="admin-table-wrap" id="audit-body">
+                    <div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Device List Modal -->
+    <div class="modal-overlay" id="devices-overlay" onclick="closeModal('devices-overlay',event)">
+        <div class="modal wide" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Connected Devices</h2>
+                <button class="icon-btn" onclick="closeModalDirect('devices-overlay')">&#10005;</button>
+            </div>
+            <div class="modal-body">
+                <div class="admin-table-wrap" id="devices-body">
+                    <div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="toast" id="toast"></div>
     <iframe id="print-frame"></iframe>
 
@@ -1161,6 +1325,11 @@ function doGet(e) {
     const ENGLISH_FONT = '"Inter", -apple-system, BlinkMacSystemFont, sans-serif';
     const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const HAS_BLE = !!navigator.bluetooth;
+    const ATTENDANCE_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Attendance`;
+
+    // Access Control
+    const SERVICE_WINDOW = { day: 0, startHour: 9, startMin: 0, endHour: 13, endMin: 30 }; // Sunday 9:00 AM – 1:30 PM
+    const ADMIN_HASH = '99cefae521c22dcaf0458ea9ce1592a8f5f44e5d76b8e88c17c343ed4010c7b0';
 
     // ============================================================
     // STATE
@@ -1217,6 +1386,147 @@ function doGet(e) {
     // Helper: get active script URL (custom override or built-in default)
     function getScriptUrl() {
         return localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+    }
+
+    // Device Identity
+    function getDeviceId() {
+        let id = localStorage.getItem('thrive_device_id');
+        if (!id) {
+            id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+            localStorage.setItem('thrive_device_id', id);
+        }
+        return id;
+    }
+    function getDeviceName() { return localStorage.getItem('thrive_device_name') || ''; }
+    function setDeviceName(name) { localStorage.setItem('thrive_device_name', name); }
+
+    // ============================================================
+    // ACCESS CONTROL
+    // ============================================================
+    function isWithinServiceWindow() {
+        const now = new Date();
+        if (now.getDay() !== SERVICE_WINDOW.day) return false;
+        const mins = now.getHours() * 60 + now.getMinutes();
+        const start = SERVICE_WINDOW.startHour * 60 + SERVICE_WINDOW.startMin;
+        const end = SERVICE_WINDOW.endHour * 60 + SERVICE_WINDOW.endMin;
+        return mins >= start && mins <= end;
+    }
+
+    function isAdminSession() {
+        return sessionStorage.getItem('thrive_admin') === 'true';
+    }
+
+    function checkAccess() {
+        const lockScreen = document.getElementById('lock-screen');
+        const app = document.getElementById('app');
+        if (isWithinServiceWindow() || isAdminSession()) {
+            lockScreen.style.display = 'none';
+            app.style.display = '';
+            if (isAdminSession()) {
+                document.body.classList.add('admin-mode');
+                const lockBtn = document.getElementById('admin-lock-btn');
+                if (lockBtn) lockBtn.style.display = 'none';
+            }
+            return true;
+        }
+        lockScreen.style.display = 'flex';
+        app.style.display = 'none';
+        return false;
+    }
+
+    async function hashPassphrase(text) {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function unlockWithPassphrase() {
+        const input = document.getElementById('lock-passphrase').value;
+        const errEl = document.getElementById('lock-error');
+        if (!input) { errEl.textContent = 'Please enter passphrase'; return; }
+        const hash = await hashPassphrase(input);
+        if (hash === ADMIN_HASH) {
+            sessionStorage.setItem('thrive_admin', 'true');
+            document.body.classList.add('admin-mode');
+            document.getElementById('lock-screen').style.display = 'none';
+            document.getElementById('app').style.display = '';
+            const lockBtn = document.getElementById('admin-lock-btn');
+            if (lockBtn) lockBtn.style.display = 'none';
+            errEl.textContent = '';
+            init();
+            auditLog('admin_login', 'Lock screen unlock');
+        } else {
+            errEl.textContent = 'Incorrect passphrase';
+            document.getElementById('lock-passphrase').value = '';
+        }
+    }
+
+    function showAdminLogin() {
+        if (isAdminSession()) {
+            toast('Already logged in as admin');
+            return;
+        }
+        document.getElementById('admin-passphrase').value = '';
+        document.getElementById('admin-error').textContent = '';
+        document.getElementById('admin-overlay').classList.add('active');
+    }
+
+    async function adminLogin() {
+        const input = document.getElementById('admin-passphrase').value;
+        const errEl = document.getElementById('admin-error');
+        if (!input) { errEl.textContent = 'Please enter passphrase'; return; }
+        const hash = await hashPassphrase(input);
+        if (hash === ADMIN_HASH) {
+            sessionStorage.setItem('thrive_admin', 'true');
+            document.body.classList.add('admin-mode');
+            const lockBtn = document.getElementById('admin-lock-btn');
+            if (lockBtn) lockBtn.style.display = 'none';
+            closeModalDirect('admin-overlay');
+            toast('Admin mode activated');
+            auditLog('admin_login', 'In-app login');
+        } else {
+            errEl.textContent = 'Incorrect passphrase';
+            document.getElementById('admin-passphrase').value = '';
+        }
+    }
+
+    // ============================================================
+    // AUDIT LOG & HEARTBEAT
+    // ============================================================
+    async function auditLog(action, details) {
+        const url = getScriptUrl();
+        if (!url) return;
+        try {
+            await fetch(url, {
+                method: 'POST', mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'audit',
+                    timestamp: new Date().toISOString(),
+                    deviceId: getDeviceId(),
+                    deviceName: getDeviceName(),
+                    auditAction: action,
+                    details: details || ''
+                })
+            });
+        } catch {}
+    }
+
+    async function sendHeartbeat() {
+        const url = getScriptUrl();
+        if (!url) return;
+        try {
+            await fetch(url, {
+                method: 'POST', mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'heartbeat',
+                    deviceId: getDeviceId(),
+                    deviceName: getDeviceName(),
+                    userAgent: navigator.userAgent.slice(0, 200),
+                    timestamp: new Date().toISOString()
+                })
+            });
+        } catch {}
     }
 
     // ============================================================
@@ -1308,8 +1618,14 @@ function doGet(e) {
     // ============================================================
     // INIT
     // ============================================================
+    let _initDone = false;
     async function init() {
+        if (_initDone) return;
+        if (!checkAccess()) return;
+        _initDone = true;
+
         setupSearch();
+        setupScreenProtection();
         try { await document.fonts.ready; } catch {}
         await loadPeople();
         renderGrid();
@@ -1319,6 +1635,25 @@ function doGet(e) {
         // Show the active script URL in settings (custom override or default)
         document.getElementById('script-url').value = localStorage.getItem('thrive_script_url') || '';
         document.getElementById('setting-service-uuid').value = BLE.config.serviceUuid;
+        document.getElementById('setting-device-name').value = getDeviceName();
+
+        // Audit + heartbeat
+        auditLog('app_open', people.length + ' names loaded');
+        sendHeartbeat();
+        setInterval(sendHeartbeat, 300000); // Every 5 min
+
+        // Attendance sync from Google Sheet (multi-device)
+        setTimeout(fetchRemoteAttendance, 3000);
+        setInterval(fetchRemoteAttendance, 45000); // Every 45s
+
+        // Re-check access window every 5 min (auto-lock when service ends)
+        setInterval(() => {
+            if (!isWithinServiceWindow() && !isAdminSession()) {
+                document.getElementById('lock-screen').style.display = 'flex';
+                document.getElementById('app').style.display = 'none';
+                _initDone = false;
+            }
+        }, 300000);
     }
 
     function setupPlatform() {
@@ -2030,6 +2365,7 @@ function doGet(e) {
             if (btn) { btn.textContent = 'Done!'; btn.className = 'btn btn-success'; }
 
             logAttendance();
+            if (selectedPerson) auditLog('print', (selectedPerson.chinese || '') + ' ' + (selectedPerson.english || ''));
             setTimeout(() => closeModalDirect('preview-overlay'), 800);
 
         } catch (e) {
@@ -2277,6 +2613,7 @@ function doGet(e) {
             localStorage.setItem(todayKey(), JSON.stringify(att));
             if (!person) toast('Checked in: ' + (p.english || p.chinese));
             syncAttendance(att[att.length - 1]);
+            auditLog('checkin', (p.chinese || '') + ' ' + (p.english || ''));
         }
         updateBadge();
         renderGrid();
@@ -2291,13 +2628,88 @@ function doGet(e) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'attendance',
-                    date: new Date().toLocaleDateString('en-US'),
+                    date: new Date().toISOString().slice(0, 10),
                     time: entry.time,
                     chinese: entry.chinese,
-                    english: entry.english
+                    english: entry.english,
+                    service: entry.service || '',
+                    isKid: entry.isKid || false,
+                    isNew: entry.isNew || false,
+                    deviceId: getDeviceId(),
+                    personId: entry.id
                 })
             });
         } catch {}
+    }
+
+    // ============================================================
+    // ATTENDANCE SYNC (multi-device)
+    // ============================================================
+    async function fetchRemoteAttendance() {
+        try {
+            const today = new Date().toISOString().slice(0, 10);
+            const query = encodeURIComponent(`SELECT * WHERE A = '${today}'`);
+            const url = `${ATTENDANCE_CSV_URL}&tq=${query}`;
+            const resp = await fetch(url);
+            if (!resp.ok) return;
+            const text = await resp.text();
+            if (!text || text.trim().length < 20) return;
+            const rows = parseCSV(text);
+            if (rows.length < 2) return;
+
+            const remote = [];
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.length < 5) continue;
+                const personId = row.length >= 9 ? (row[8] || '').toLowerCase() : '';
+                const id = personId || `${(row[2]||'')}|${(row[3]||'')}`.toLowerCase();
+                if (!id || id === '|') continue;
+                remote.push({
+                    id: id,
+                    chinese: row[2] || '',
+                    english: row[3] || '',
+                    time: row[1] || '',
+                    service: row[4] || '',
+                    isKid: (row[5] || '') === 'Y',
+                    isNew: (row[6] || '') === 'Y',
+                });
+            }
+            mergeRemoteAttendance(remote);
+        } catch (e) {
+            console.warn('[Sync] Remote attendance fetch failed:', e);
+        }
+    }
+
+    function mergeRemoteAttendance(remote) {
+        const local = getAttendance();
+        const localIds = new Set(local.map(a => a.id));
+        let added = 0;
+
+        for (const r of remote) {
+            if (!localIds.has(r.id)) {
+                local.push({
+                    id: r.id,
+                    chinese: r.chinese,
+                    english: r.english,
+                    time: r.time,
+                    timestamp: '',
+                    service: r.service,
+                    isKid: r.isKid,
+                    isNew: r.isNew,
+                    _remote: true
+                });
+                localIds.add(r.id);
+                added++;
+            }
+        }
+
+        if (added > 0) {
+            local.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+            localStorage.setItem(todayKey(), JSON.stringify(local));
+            updateBadge();
+            renderGrid();
+            console.log(`[Sync] Merged ${added} remote check-ins`);
+        }
     }
 
     function updateBadge() {
@@ -2406,6 +2818,7 @@ function doGet(e) {
         const id = `${cn}|${en}`.toLowerCase();
         const existsInSystem = people.some(p => p.id === id);
         selectedPerson = { id, chinese: cn, english: en, service: '', _isNew: !existsInSystem };
+        if (!existsInSystem) auditLog('walkin_add', cn + ' ' + en);
         closeModalDirect('new-overlay');
         showPreview(cn, en);
     }
@@ -2420,9 +2833,11 @@ function doGet(e) {
     function saveSettings() {
         const url = document.getElementById('script-url').value.trim();
         const svc = document.getElementById('setting-service-uuid').value.trim();
+        const devName = document.getElementById('setting-device-name').value.trim();
         if (url) localStorage.setItem('thrive_script_url', url);
         else localStorage.removeItem('thrive_script_url');
         if (svc) { BLE.config.serviceUuid = svc; localStorage.setItem('thrive_ble_config', JSON.stringify(BLE.config)); }
+        if (devName !== getDeviceName()) { setDeviceName(devName); sendHeartbeat(); }
         closeModalDirect('settings-overlay');
         toast('Settings saved');
     }
@@ -2861,6 +3276,123 @@ function doGet(e) {
         el.classList.add('show');
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+    }
+
+    // ============================================================
+    // SCREENSHOT PROTECTION
+    // ============================================================
+    function setupScreenProtection() {
+        document.addEventListener('contextmenu', (e) => {
+            if (!(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+                e.preventDefault();
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'p' || e.key === 'u')) {
+                e.preventDefault();
+            }
+        });
+    }
+
+    // ============================================================
+    // ADMIN VIEWS (Audit Log + Device List)
+    // ============================================================
+    async function showAuditLog() {
+        if (!isAdminSession()) { toast('Admin access required'); return; }
+        document.getElementById('audit-overlay').classList.add('active');
+        const body = document.getElementById('audit-body');
+        body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading audit log...</div>';
+
+        try {
+            const auditUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Audit`;
+            const resp = await fetch(auditUrl);
+            if (!resp.ok) throw new Error('No Audit tab');
+            const text = await resp.text();
+            if (!text || text.trim().length < 20 || text.toLowerCase().includes('timestamp,"chinese')) {
+                body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">No audit data yet. Deploy the updated Apps Script to enable audit logging.</div>';
+                return;
+            }
+            const rows = parseCSV(text);
+            if (rows.length < 2) {
+                body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">No audit entries.</div>';
+                return;
+            }
+
+            // Show most recent first (last 100 rows)
+            const entries = [];
+            for (let i = rows.length - 1; i >= 1 && entries.length < 100; i--) {
+                const r = rows[i];
+                if (r.length < 4) continue;
+                entries.push(r);
+            }
+
+            let html = '<table class="admin-table"><thead><tr><th>Time</th><th>Device</th><th>Action</th><th>Details</th></tr></thead><tbody>';
+            for (const r of entries) {
+                const ts = r[0] || '';
+                const dn = r[2] || r[1] || '';
+                const act = r[3] || '';
+                const det = r[4] || '';
+                const shortTs = ts.includes('T') ? ts.slice(5, 16).replace('T', ' ') : ts.slice(0, 16);
+                html += `<tr><td>${escH(shortTs)}</td><td>${escH(dn)}</td><td>${escH(act)}</td><td>${escH(det)}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            body.innerHTML = html;
+        } catch (e) {
+            body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">Could not load audit log. Make sure the updated Apps Script is deployed.</div>';
+        }
+    }
+
+    function parseUserAgent(ua) {
+        if (/iPad/.test(ua)) return 'iPad';
+        if (/iPhone/.test(ua)) return 'iPhone';
+        if (/Android/.test(ua) && /Mobile/.test(ua)) return 'Android Phone';
+        if (/Android/.test(ua)) return 'Android Tablet';
+        if (/Macintosh/.test(ua)) return 'Mac';
+        if (/Windows/.test(ua)) return 'Windows PC';
+        if (/CrOS/.test(ua)) return 'Chromebook';
+        if (/Linux/.test(ua)) return 'Linux';
+        return 'Unknown';
+    }
+
+    async function showDeviceList() {
+        if (!isAdminSession()) { toast('Admin access required'); return; }
+        document.getElementById('devices-overlay').classList.add('active');
+        const body = document.getElementById('devices-body');
+        body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading devices...</div>';
+
+        try {
+            const devUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Devices`;
+            const resp = await fetch(devUrl);
+            if (!resp.ok) throw new Error('No Devices tab');
+            const text = await resp.text();
+            if (!text || text.trim().length < 20) {
+                body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">No devices registered yet. Deploy the updated Apps Script to enable device tracking.</div>';
+                return;
+            }
+            const rows = parseCSV(text);
+            if (rows.length < 2) {
+                body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">No devices registered.</div>';
+                return;
+            }
+
+            let html = '<table class="admin-table"><thead><tr><th>Name</th><th>Type</th><th>Last Seen</th><th>First Seen</th></tr></thead><tbody>';
+            for (let i = 1; i < rows.length; i++) {
+                const r = rows[i];
+                if (r.length < 4) continue;
+                const name = r[1] || r[0]?.slice(0, 12) || '?';
+                const type = parseUserAgent(r[2] || '');
+                const lastSeen = r[3] || '';
+                const firstSeen = r[4] || '';
+                const shortLast = lastSeen.includes('T') ? lastSeen.slice(5, 16).replace('T', ' ') : lastSeen;
+                const shortFirst = firstSeen.includes('T') ? firstSeen.slice(5, 16).replace('T', ' ') : firstSeen;
+                const isThis = r[0] === getDeviceId();
+                html += `<tr${isThis ? ' style="background:var(--success-bg);"' : ''}><td>${escH(name)}${isThis ? ' (this)' : ''}</td><td>${escH(type)}</td><td>${escH(shortLast)}</td><td>${escH(shortFirst)}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            body.innerHTML = html;
+        } catch (e) {
+            body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">Could not load devices. Make sure the updated Apps Script is deployed.</div>';
+        }
     }
 
     // ============================================================
