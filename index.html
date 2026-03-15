@@ -295,6 +295,14 @@
             font-weight: 700;
         }
 
+        .name-card .group-badge {
+            position: absolute;
+            top: 3px;
+            left: 5px;
+            font-size: 11px;
+            opacity: 0.6;
+        }
+
         .empty-state {
             grid-column: 1 / -1;
             text-align: center;
@@ -901,7 +909,7 @@
     var ml = ss.getSheetByName('Master List');
     if (!ml) ml = ss.insertSheet('Master List');
     ml.clear();
-    ml.appendRow(['Chinese Name','English Name','Service']);
+    ml.appendRow(['Chinese Name','English Name','Service','Group']);
     ml.getRange('1:1').setFontWeight('bold');
     var src = ss.getSheetByName('Form Responses 1')
            || ss.getSheets()[0];
@@ -913,7 +921,30 @@
       var svc = (rows[i][5]||'').toString().trim();
       if (!cn && !en) continue;
       var key = cn + '|' + en;
-      seen[key] = [cn, en, svc];
+      seen[key] = [cn, en, svc, ''];
+    }
+    // Merge extra names if provided
+    if (data.extraNames && data.extraNames.length) {
+      for (var j = 0; j < data.extraNames.length; j++) {
+        var e = data.extraNames[j];
+        var key2 = (e.chinese||'') + '|' + (e.english||'');
+        if (!seen[key2]) {
+          seen[key2] = [e.chinese||'', e.english||'',
+            e.service||'', e.group||''];
+        } else if (e.group) {
+          seen[key2][3] = e.group;
+        }
+      }
+    }
+    // Apply family groupings if provided
+    if (data.groups) {
+      for (var gn in data.groups) {
+        var members = data.groups[gn];
+        for (var m = 0; m < members.length; m++) {
+          var gk = (members[m][0]||'')+'|'+(members[m][1]||'');
+          if (seen[gk]) seen[gk][3] = gn;
+        }
+      }
     }
     var keys = Object.keys(seen).sort();
     for (var k = 0; k < keys.length; k++) {
@@ -924,7 +955,8 @@
 
   if (action === 'addName') {
     var ml = getOrCreateML(ss);
-    ml.appendRow([data.chinese||'', data.english||'', data.service||'']);
+    ml.appendRow([data.chinese||'', data.english||'',
+      data.service||'', data.group||'']);
     return ok({status:'ok'});
   }
 
@@ -934,6 +966,8 @@
     if (row > 0) {
       ml.getRange(row,1).setValue(data.chinese||'');
       ml.getRange(row,2).setValue(data.english||'');
+      if (data.group !== undefined)
+        ml.getRange(row,4).setValue(data.group||'');
     }
     return ok({status: row > 0 ? 'ok' : 'not_found'});
   }
@@ -945,6 +979,30 @@
     return ok({status: row > 0 ? 'ok' : 'not_found'});
   }
 
+  if (action === 'bulkAdd') {
+    var ml = getOrCreateML(ss);
+    var existing = {};
+    var allData = ml.getDataRange().getValues();
+    for (var i = 1; i < allData.length; i++) {
+      existing[allData[i][0]+'|'+allData[i][1]] = i+1;
+    }
+    var added = 0;
+    var items = data.names || [];
+    for (var j = 0; j < items.length; j++) {
+      var n = items[j];
+      var nk = (n.chinese||'')+'|'+(n.english||'');
+      if (!existing[nk]) {
+        ml.appendRow([n.chinese||'',n.english||'',
+          n.service||'',n.group||'']);
+        added++;
+      } else if (n.group) {
+        var r = existing[nk];
+        ml.getRange(r,4).setValue(n.group);
+      }
+    }
+    return ok({status:'ok', added: added});
+  }
+
   return ok({status:'unknown_action'});
 }
 
@@ -952,7 +1010,7 @@ function getOrCreateML(ss) {
   var ml = ss.getSheetByName('Master List');
   if (!ml) {
     ml = ss.insertSheet('Master List');
-    ml.appendRow(['Chinese Name','English Name','Service']);
+    ml.appendRow(['Chinese Name','English Name','Service','Group']);
     ml.getRange('1:1').setFontWeight('bold');
   }
   return ml;
@@ -1003,6 +1061,7 @@ function doGet(e) {
                 <div class="manage-add-form">
                     <input type="text" id="add-chinese" placeholder="Chinese name" autocomplete="off">
                     <input type="text" id="add-english" placeholder="English name" autocomplete="off">
+                    <input type="text" id="add-group" placeholder="Family group" autocomplete="off" style="max-width:110px;">
                     <button class="btn btn-success" onclick="addNameToMaster()">+ Add</button>
                 </div>
             </div>
@@ -1057,6 +1116,92 @@ function doGet(e) {
     }
 
     // ============================================================
+    // SEED DATA (from Excel spreadsheets — merged on Initialize)
+    // ============================================================
+    const SEED_NAMES = [
+        {chinese:'',english:'Abigail',service:'1',group:''},
+        {chinese:'',english:'Agnes',service:'2',group:''},
+        {chinese:'',english:'Angel',service:'2',group:''},
+        {chinese:'程祺翔',english:'Andrew',service:'2',group:''},
+        {chinese:'李詩琪',english:'Cali',service:'2',group:''},
+        {chinese:'陳佳柔',english:'Carol',service:'2',group:''},
+        {chinese:'',english:'Carson',service:'1',group:''},
+        {chinese:'',english:'Charles',service:'2',group:''},
+        {chinese:'陳香霖',english:'Chloe',service:'2',group:''},
+        {chinese:'陳宥瑄',english:'Claire',service:'2',group:''},
+        {chinese:'',english:'David',service:'2',group:''},
+        {chinese:'梁蘊華',english:'Deb',service:'1',group:'Ngs'},
+        {chinese:'維謙',english:'Duke',service:'2',group:''},
+        {chinese:'霍立平',english:'Eldo',service:'2',group:''},
+        {chinese:'敬恩',english:'Ella',service:'1',group:''},
+        {chinese:'薛豐旻',english:'Flora',service:'1',group:'Klassens'},
+        {chinese:'柯凡生',english:'Frank',service:'1',group:''},
+        {chinese:'',english:'Hanna',service:'2',group:''},
+        {chinese:'杜蕙宇',english:'Hingis',service:'2',group:''},
+        {chinese:'崇恩',english:'Ian',service:'1',group:''},
+        {chinese:'',english:'Jack',service:'2',group:''},
+        {chinese:'張天一',english:'Jack',service:'2',group:''},
+        {chinese:'林婉真',english:'Jane',service:'1',group:'Hongs'},
+        {chinese:'林煦恆',english:'Jason',service:'2',group:''},
+        {chinese:'',english:'Jay',service:'2',group:''},
+        {chinese:'傅柔安',english:'Jen',service:'2',group:''},
+        {chinese:'陳加榮',english:'Jill',service:'1',group:'MosesJill'},
+        {chinese:'',english:'Jin',service:'2',group:''},
+        {chinese:'',english:'Jon',service:'2',group:''},
+        {chinese:'',english:'Jonathan',service:'2',group:''},
+        {chinese:'孫克強',english:'Jonathan',service:'1',group:'Klassens'},
+        {chinese:'黃啓恩',english:'Kevin',service:'1',group:'Huangs'},
+        {chinese:'洪正璋',english:'Kevin',service:'1',group:'Hongs'},
+        {chinese:'黄俐寧',english:'Lainey',service:'2',group:''},
+        {chinese:'洪德忍',english:'Laurent',service:'2',group:''},
+        {chinese:'',english:'Levi',service:'2',group:''},
+        {chinese:'',english:'Lori',service:'2',group:''},
+        {chinese:'',english:'Luke',service:'2',group:''},
+        {chinese:'張詠君',english:'Luke',service:'1',group:''},
+        {chinese:'',english:'Mark',service:'1',group:''},
+        {chinese:'',english:'Michael',service:'1',group:''},
+        {chinese:'王敬毅',english:'Michael',service:'2',group:''},
+        {chinese:'陸明凱',english:'Mingkai',service:'2',group:''},
+        {chinese:'孫晴',english:'Miriam',service:'2',group:''},
+        {chinese:'王寧揚',english:'Moses',service:'1',group:'MosesJill'},
+        {chinese:'李承安',english:'Nathan',service:'1',group:'Lees'},
+        {chinese:'楊伯龍',english:'Paul',service:'2',group:''},
+        {chinese:'李蓉蓁',english:'Rachelle',service:'1',group:''},
+        {chinese:'趙瑞祥',english:'Ray',service:'1',group:'RayJessica'},
+        {chinese:'張中杰',english:'Raymond',service:'2',group:''},
+        {chinese:'洪祈恩',english:'Ryan',service:'1',group:'Hongs'},
+        {chinese:'山姆',english:'Sam',service:'2',group:''},
+        {chinese:'潘鈺欣',english:'Samantha',service:'2',group:''},
+        {chinese:'金小美',english:'Somi',service:'1',group:''},
+        {chinese:'蔣立',english:'Stanley',service:'2',group:''},
+        {chinese:'劉復康',english:'Tim',service:'2',group:''},
+        {chinese:'亭宇',english:'Ting',service:'2',group:''},
+        {chinese:'姿穎',english:'Vicky',service:'1',group:''},
+        {chinese:'王俊人',english:'Wayne',service:'2',group:''},
+        {chinese:'陳奕維',english:'Yi-Wei',service:'2',group:''},
+        {chinese:'嘉燕',english:'',service:'1',group:''},
+        {chinese:'洪芯亞',english:'Aaliyah',service:'1',group:'Hongs'},
+        {chinese:'Ezra',english:'',service:'1',group:'Parks'},
+        {chinese:'陳佳諾',english:'Gabriel',service:'2',group:''},
+        {chinese:'陳德恩',english:'Grace',service:'2',group:''},
+        {chinese:'許瀚元',english:'Kevin',service:'2',group:''},
+        {chinese:'蔡如箴',english:'Lucia',service:'2',group:''},
+    ];
+
+    const FAMILY_GROUPS = {
+        'Hongs': [['洪祈恩','Ryan'],['洪芯亞','Aaliyah'],['林婉真','Jane'],['洪正璋','Kevin']],
+        'Huangs': [['林筱涵','Sharon'],['黃啓恩','Kevin']],
+        'Klassens': [['薛豐旻','Flora'],['孫克強','Jonathan']],
+        'Lees': [['李承安','Nathan'],['李祁澤','Josh'],['亭宇','Tina']],
+        'LeoJasmine': [['徐韡','Leopold'],['徐牧凡','Joshua'],['牧唯','Joseph'],['志敏','Jasmine'],['言言','James']],
+        'MosesJill': [['王寧揚','Moses'],['陳加榮','Jill']],
+        'Ngs': [['伍俊彥','Patrick'],['伍穎信','Theo'],['伍慧怡','Evie'],['梁蘊華','Deb']],
+        'Parks': [['朴成桓','James'],['宋善賢','Ruth'],['Ezra',''],['朴義臨','Elliot'],['朴義宣','Elias']],
+        'RayJessica': [['申屠永芳','Jessica'],['趙瑞祥','Ray']],
+        'Sons': [['孫智勳','PD'],['孫海恩','Grace']],
+    };
+
+    // ============================================================
     // INIT
     // ============================================================
     async function init() {
@@ -1103,9 +1248,6 @@ function doGet(e) {
                 const resp = await fetch(MASTER_CSV_URL);
                 if (resp.ok) {
                     const text = await resp.text();
-                    // Verify this is actually the Master List tab (not a fallback to Form Responses)
-                    // Master List has headers: "Chinese Name","English Name","Service"
-                    // Form Responses has "Timestamp" as first header
                     if (text && text.trim().length > 30 &&
                         !text.includes('error') &&
                         !text.toLowerCase().includes('timestamp')) {
@@ -1118,13 +1260,19 @@ function doGet(e) {
                 }
             } catch {}
 
-            // Fallback to form responses if Master List doesn't exist or is empty
+            // Fallback to form responses
             if (!usedMaster) {
                 const resp = await fetch(CSV_URL);
                 if (!resp.ok) throw new Error('Fetch failed');
                 const text = await resp.text();
                 people = processRows(parseCSV(text));
             }
+
+            // Merge seed data (names from Excel files not yet in the sheet)
+            mergeSeedData();
+
+            // Apply family groupings
+            applyFamilyGroups();
 
             localStorage.setItem('thrive_cache', JSON.stringify(people));
         } catch (e) {
@@ -1134,6 +1282,39 @@ function doGet(e) {
                 toast('Using cached data (offline)');
             } else {
                 toast('Failed to load data');
+            }
+        }
+    }
+
+    function mergeSeedData() {
+        const existing = new Set(people.map(p => p.id));
+        for (const s of SEED_NAMES) {
+            const key = `${s.chinese}|${s.english}`.toLowerCase();
+            if (!existing.has(key)) {
+                people.push({ chinese: s.chinese, english: s.english, service: s.service, group: s.group, id: key });
+                existing.add(key);
+            } else if (s.group) {
+                // Update group on existing entry
+                const p = people.find(p => p.id === key);
+                if (p && !p.group) p.group = s.group;
+            }
+        }
+        // Re-sort
+        people.sort((a, b) => {
+            const an = (a.english || a.chinese).toLowerCase();
+            const bn = (b.english || b.chinese).toLowerCase();
+            if (a.english && !b.english) return -1;
+            if (!a.english && b.english) return 1;
+            return an.localeCompare(bn);
+        });
+    }
+
+    function applyFamilyGroups() {
+        for (const [groupName, members] of Object.entries(FAMILY_GROUPS)) {
+            for (const [cn, en] of members) {
+                const key = `${cn}|${en}`.toLowerCase();
+                const p = people.find(p => p.id === key);
+                if (p) p.group = groupName;
             }
         }
     }
@@ -1150,6 +1331,7 @@ function doGet(e) {
             let cn = (row[0] || '').trim();
             let en = (row[1] || '').trim();
             const svc = (row[2] || '').trim();
+            const grp = (row[3] || '').trim();
 
             if (naSet.has(cn.toLowerCase())) cn = '';
             if (naSet.has(en.toLowerCase())) en = '';
@@ -1160,7 +1342,7 @@ function doGet(e) {
             else if (svc.includes('Second') || svc.includes('第二') || svc === '2') service = '2';
 
             const key = `${cn}|${en}`.toLowerCase();
-            result.push({ chinese: cn, english: en, service, id: key });
+            result.push({ chinese: cn, english: en, service, group: grp, id: key });
         }
 
         return result.sort((a, b) => {
@@ -1229,7 +1411,7 @@ function doGet(e) {
             else if (svc.includes('Second') || svc.includes('第二')) service = '2';
 
             const key = `${cn}|${en}`.toLowerCase();
-            seen.set(key, { chinese: cn, english: en, service, id: key });
+            seen.set(key, { chinese: cn, english: en, service, group: '', id: key });
         }
 
         return Array.from(seen.values()).sort((a, b) => {
@@ -1248,7 +1430,7 @@ function doGet(e) {
         const q = document.getElementById('search').value.trim().toLowerCase();
         const grid = document.getElementById('name-grid');
 
-        const filtered = people.filter(p => {
+        let filtered = people.filter(p => {
             if (serviceFilter !== 'all' && p.service && p.service !== serviceFilter) return false;
             if (q) {
                 return (p.chinese || '').toLowerCase().includes(q) ||
@@ -1257,6 +1439,24 @@ function doGet(e) {
             return true;
         });
 
+        // Family expansion: if searching and any match has a group, include all group members
+        if (q && filtered.length > 0) {
+            const matchedGroups = new Set();
+            for (const p of filtered) {
+                if (p.group) matchedGroups.add(p.group);
+            }
+            if (matchedGroups.size > 0) {
+                const filteredIds = new Set(filtered.map(p => p.id));
+                for (const p of people) {
+                    if (p.group && matchedGroups.has(p.group) && !filteredIds.has(p.id)) {
+                        if (serviceFilter !== 'all' && p.service && p.service !== serviceFilter) continue;
+                        filtered.push(p);
+                        filteredIds.add(p.id);
+                    }
+                }
+            }
+        }
+
         if (!filtered.length) {
             grid.innerHTML = '<div class="empty-state">No names found</div>';
             return;
@@ -1264,8 +1464,10 @@ function doGet(e) {
 
         grid.innerHTML = filtered.map(p => {
             const ci = isCheckedIn(p);
+            const hasGroup = !!p.group;
             return `<div class="name-card ${ci ? 'checked-in' : ''}" onclick="selectPerson('${esc(p.id)}')">
                 ${ci ? '<span class="check-mark">&#10003;</span>' : ''}
+                ${hasGroup ? `<span class="group-badge" title="${escH(p.group)}">&#128106;</span>` : ''}
                 ${p.chinese ? `<div class="cn">${escH(p.chinese)}</div>` : ''}
                 ${p.english ? `<div class="en">${escH(p.english)}</div>` : ''}
             </div>`;
@@ -1973,8 +2175,9 @@ function doGet(e) {
                 const cn = (row[0] || '').trim();
                 const en = (row[1] || '').trim();
                 const svc = (row[2] || '').trim();
+                const grp = (row[3] || '').trim();
                 if (!cn && !en) continue;
-                masterNames.push({ chinese: cn, english: en, service: svc });
+                masterNames.push({ chinese: cn, english: en, service: svc, group: grp });
             }
             masterNames.sort((a, b) => {
                 const an = (a.english || a.chinese).toLowerCase();
@@ -2018,7 +2221,7 @@ function doGet(e) {
                 <div class="names">
                     ${n.chinese ? `<span class="cn">${escH(n.chinese)}</span>` : ''}
                     ${n.english ? `<span class="en">${escH(n.english)}</span>` : ''}
-                    ${n.service ? `<span style="font-size:10px;color:var(--text-secondary);margin-left:4px;">(${escH(n.service)})</span>` : ''}
+                    ${n.group ? `<span style="font-size:10px;color:var(--primary);margin-left:4px;">&#128106; ${escH(n.group)}</span>` : ''}
                 </div>
                 <div class="actions">
                     <button onclick="startEditName(${realIdx})" title="Edit">&#9998;</button>
@@ -2039,6 +2242,7 @@ function doGet(e) {
         el.innerHTML = `<div class="edit-form">
             <input type="text" id="edit-cn-${idx}" value="${escH(n.chinese)}" placeholder="Chinese name">
             <input type="text" id="edit-en-${idx}" value="${escH(n.english)}" placeholder="English name">
+            <input type="text" id="edit-grp-${idx}" value="${escH(n.group || '')}" placeholder="Family group (optional)">
             <div class="edit-actions">
                 <button class="btn btn-primary" onclick="saveEditName(${idx})">Save</button>
                 <button class="btn btn-cancel" onclick="renderManageList()">Cancel</button>
@@ -2052,6 +2256,7 @@ function doGet(e) {
         const n = masterNames[idx];
         const newCn = document.getElementById(`edit-cn-${idx}`).value.trim();
         const newEn = document.getElementById(`edit-en-${idx}`).value.trim();
+        const newGrp = document.getElementById(`edit-grp-${idx}`).value.trim();
         if (!newCn && !newEn) { toast('Enter at least one name'); return; }
 
         const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
@@ -2071,13 +2276,15 @@ function doGet(e) {
                     oldChinese: n.chinese,
                     oldEnglish: n.english,
                     chinese: newCn,
-                    english: newEn
+                    english: newEn,
+                    group: newGrp
                 })
             });
 
             // Update locally
             masterNames[idx].chinese = newCn;
             masterNames[idx].english = newEn;
+            masterNames[idx].group = newGrp;
             status.className = 'manage-status success';
             status.textContent = 'Saved!';
             setTimeout(() => { status.style.display = 'none'; }, 1500);
@@ -2133,6 +2340,7 @@ function doGet(e) {
     async function addNameToMaster() {
         const cn = document.getElementById('add-chinese').value.trim();
         const en = document.getElementById('add-english').value.trim();
+        const grp = document.getElementById('add-group').value.trim();
         if (!cn && !en) { toast('Enter at least one name'); return; }
 
         const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
@@ -2151,11 +2359,12 @@ function doGet(e) {
                     action: 'addName',
                     chinese: cn,
                     english: en,
-                    service: ''
+                    service: '',
+                    group: grp
                 })
             });
 
-            masterNames.push({ chinese: cn, english: en, service: '' });
+            masterNames.push({ chinese: cn, english: en, service: '', group: grp });
             masterNames.sort((a, b) => {
                 const an = (a.english || a.chinese).toLowerCase();
                 const bn = (b.english || b.chinese).toLowerCase();
@@ -2164,6 +2373,7 @@ function doGet(e) {
 
             document.getElementById('add-chinese').value = '';
             document.getElementById('add-english').value = '';
+            document.getElementById('add-group').value = '';
             status.className = 'manage-status success';
             status.textContent = `Added ${cn || en}!`;
             setTimeout(() => { status.style.display = 'none'; }, 1500);
@@ -2178,7 +2388,7 @@ function doGet(e) {
     }
 
     async function initMasterList() {
-        if (!confirm('This will create a "Master List" tab in your Google Sheet from the form responses, removing duplicates. Continue?')) return;
+        if (!confirm('This will create a "Master List" tab in your Google Sheet combining form responses + Excel data + family groupings, removing duplicates. Continue?')) return;
 
         const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
         if (!url) { toast('Set Apps Script URL in Settings first'); return; }
@@ -2189,23 +2399,28 @@ function doGet(e) {
         btn.textContent = 'Initializing...';
         status.style.display = 'block';
         status.className = 'manage-status info';
-        status.textContent = 'Creating Master List from form data... this may take a moment.';
+        status.textContent = 'Creating Master List (form data + Excel names + families)...';
 
         try {
+            // Send seed names and family groups along with the init request
             await fetch(url, {
                 method: 'POST', mode: 'no-cors',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'initMasterList' })
+                body: JSON.stringify({
+                    action: 'initMasterList',
+                    extraNames: SEED_NAMES,
+                    groups: FAMILY_GROUPS
+                })
             });
 
             // Since mode: no-cors, we can't read the response.
             // Wait a moment then reload
-            await sleep(3000);
+            await sleep(4000);
             await loadMasterNames();
             renderManageList();
 
             status.className = 'manage-status success';
-            status.textContent = `Master List created with ${masterNames.length} names!`;
+            status.textContent = `Master List created with ${masterNames.length} names (including families)!`;
 
             await loadPeople();
             renderGrid();
