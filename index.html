@@ -1774,6 +1774,12 @@ function doGet(e) {
 
     function applyInactiveFlags() {
         const activeIds = getRecentActiveIds(4);
+        // If no attendance data exists yet, treat everyone as active
+        // (avoids marking everyone inactive on a fresh install)
+        if (activeIds.size === 0) {
+            for (const p of people) p.inactive = false;
+            return;
+        }
         for (const p of people) {
             p.inactive = !activeIds.has(p.id);
         }
