@@ -576,6 +576,170 @@
 
         #print-frame { position: absolute; width: 0; height: 0; border: 0; }
 
+        /* Manage Names */
+        .manage-search {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .manage-search input {
+            flex: 1;
+            height: 40px;
+            padding: 0 12px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            outline: none;
+        }
+
+        .manage-search input:focus { border-color: var(--primary); }
+
+        .manage-toolbar {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .manage-toolbar .btn { flex: 0 1 auto; height: 36px; font-size: 12px; padding: 0 12px; }
+
+        .manage-count {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .manage-list {
+            max-height: 50vh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .manage-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+            gap: 8px;
+        }
+
+        .manage-item:last-child { border-bottom: none; }
+
+        .manage-item .names {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .manage-item .names .cn {
+            font-family: 'Noto Sans TC', sans-serif;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .manage-item .names .en {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .manage-item .actions {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .manage-item .actions button {
+            width: 32px;
+            height: 32px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            transition: all 0.15s;
+        }
+
+        .manage-item .actions button:active { background: var(--border); }
+        .manage-item .actions button.delete-btn:active { background: #fee2e2; color: var(--danger); }
+
+        .manage-item.editing {
+            flex-direction: column;
+            align-items: stretch;
+            background: #f8fafc;
+        }
+
+        .manage-item.editing .edit-form {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .manage-item.editing .edit-form input {
+            height: 36px;
+            padding: 0 10px;
+            border: 1.5px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            outline: none;
+        }
+
+        .manage-item.editing .edit-form input:focus { border-color: var(--primary); }
+
+        .manage-item.editing .edit-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .manage-item.editing .edit-actions .btn {
+            height: 34px;
+            font-size: 12px;
+            padding: 0 14px;
+        }
+
+        .manage-add-form {
+            display: flex;
+            gap: 6px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .manage-add-form input {
+            flex: 1;
+            min-width: 100px;
+            height: 38px;
+            padding: 0 10px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            outline: none;
+        }
+
+        .manage-add-form input:focus { border-color: var(--primary); }
+        .manage-add-form .btn { flex: 0 0 auto; height: 38px; font-size: 13px; padding: 0 14px; }
+
+        .manage-status {
+            text-align: center;
+            padding: 8px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .manage-status.success { color: var(--success); }
+        .manage-status.error { color: var(--danger); }
+        .manage-status.info { color: var(--primary); }
+
         @media (min-width: 768px) {
             .name-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
         }
@@ -587,6 +751,7 @@
             <h1>Thrive Name Tags</h1>
             <div class="header-right">
                 <span class="attendance-badge" id="badge" onclick="showAttendance()">0 checked in</span>
+                <button class="icon-btn" onclick="showManage()" title="Manage Names">&#9998;</button>
                 <button class="icon-btn" onclick="showSettings()" title="Settings">&#9881;</button>
                 <button class="icon-btn" onclick="refreshData()" title="Refresh" id="refresh-btn">&#8635;</button>
             </div>
@@ -719,22 +884,127 @@
                     <div class="script-code" id="script-code">function doPost(e) {
   var data = JSON.parse(e.postData.contents);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Attendance');
-  if (!sheet) {
-    sheet = ss.insertSheet('Attendance');
-    sheet.appendRow(['Date', 'Time', 'Chinese Name', 'English Name']);
-    sheet.getRange('1:1').setFontWeight('bold');
+  var action = data.action || 'attendance';
+
+  if (action === 'attendance') {
+    var sheet = ss.getSheetByName('Attendance');
+    if (!sheet) {
+      sheet = ss.insertSheet('Attendance');
+      sheet.appendRow(['Date','Time','Chinese Name','English Name']);
+      sheet.getRange('1:1').setFontWeight('bold');
+    }
+    sheet.appendRow([data.date, data.time, data.chinese||'', data.english||'']);
+    return ok({status:'ok'});
   }
-  sheet.appendRow([data.date, data.time, data.chinese || '', data.english || '']);
-  return ContentService.createTextOutput(JSON.stringify({status:'ok'}))
+
+  if (action === 'initMasterList') {
+    var ml = ss.getSheetByName('Master List');
+    if (!ml) ml = ss.insertSheet('Master List');
+    ml.clear();
+    ml.appendRow(['Chinese Name','English Name','Service']);
+    ml.getRange('1:1').setFontWeight('bold');
+    var src = ss.getSheetByName('Form Responses 1')
+           || ss.getSheets()[0];
+    var rows = src.getDataRange().getValues();
+    var seen = {};
+    for (var i = 1; i < rows.length; i++) {
+      var cn = (rows[i][1]||'').toString().trim();
+      var en = (rows[i][2]||'').toString().trim();
+      var svc = (rows[i][5]||'').toString().trim();
+      if (!cn && !en) continue;
+      var key = cn + '|' + en;
+      seen[key] = [cn, en, svc];
+    }
+    var keys = Object.keys(seen).sort();
+    for (var k = 0; k < keys.length; k++) {
+      ml.appendRow(seen[keys[k]]);
+    }
+    return ok({status:'ok', count: keys.length});
+  }
+
+  if (action === 'addName') {
+    var ml = getOrCreateML(ss);
+    ml.appendRow([data.chinese||'', data.english||'', data.service||'']);
+    return ok({status:'ok'});
+  }
+
+  if (action === 'updateName') {
+    var ml = getOrCreateML(ss);
+    var row = findRow(ml, data.oldChinese, data.oldEnglish);
+    if (row > 0) {
+      ml.getRange(row,1).setValue(data.chinese||'');
+      ml.getRange(row,2).setValue(data.english||'');
+    }
+    return ok({status: row > 0 ? 'ok' : 'not_found'});
+  }
+
+  if (action === 'deleteName') {
+    var ml = getOrCreateML(ss);
+    var row = findRow(ml, data.chinese, data.english);
+    if (row > 0) ml.deleteRow(row);
+    return ok({status: row > 0 ? 'ok' : 'not_found'});
+  }
+
+  return ok({status:'unknown_action'});
+}
+
+function getOrCreateML(ss) {
+  var ml = ss.getSheetByName('Master List');
+  if (!ml) {
+    ml = ss.insertSheet('Master List');
+    ml.appendRow(['Chinese Name','English Name','Service']);
+    ml.getRange('1:1').setFontWeight('bold');
+  }
+  return ml;
+}
+
+function findRow(sheet, cn, en) {
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] == cn && data[i][1] == en) return i+1;
+  }
+  return -1;
+}
+
+function ok(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doGet(e) {
-  return ContentService.createTextOutput('Attendance script is running.');
+  return ContentService.createTextOutput('Script is running.');
 }</div>
                     <button class="btn btn-secondary" onclick="copyScript()" style="width:100%;margin-top:8px;">Copy Script Code</button>
                 </details>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Names Modal -->
+    <div class="modal-overlay" id="manage-overlay" onclick="closeModal('manage-overlay',event)">
+        <div class="modal wide" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Manage Names</h2>
+                <button class="icon-btn" onclick="closeModalDirect('manage-overlay')">&#10005;</button>
+            </div>
+            <div class="modal-body">
+                <div class="manage-search">
+                    <input type="text" id="manage-search" placeholder="Search names..." oninput="renderManageList()" autocomplete="off">
+                </div>
+                <div class="manage-toolbar">
+                    <button class="btn btn-primary" onclick="initMasterList()" id="init-master-btn">Initialize from Form Data</button>
+                    <button class="btn btn-secondary" onclick="refreshManageList()">&#8635; Refresh</button>
+                </div>
+                <div id="manage-status" class="manage-status" style="display:none;"></div>
+                <div class="manage-count" id="manage-count"></div>
+                <div class="manage-list" id="manage-list">
+                    <div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading...</div>
+                </div>
+                <div class="manage-add-form">
+                    <input type="text" id="add-chinese" placeholder="Chinese name" autocomplete="off">
+                    <input type="text" id="add-english" placeholder="English name" autocomplete="off">
+                    <button class="btn btn-success" onclick="addNameToMaster()">+ Add</button>
+                </div>
             </div>
         </div>
     </div>
@@ -823,12 +1093,28 @@ function doGet(e) {
     // ============================================================
     // DATA LOADING
     // ============================================================
+    const MASTER_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Master+List`;
+
     async function loadPeople() {
         try {
-            const resp = await fetch(CSV_URL);
-            if (!resp.ok) throw new Error('Fetch failed');
-            const text = await resp.text();
-            people = processRows(parseCSV(text));
+            // Try Master List tab first
+            let resp = await fetch(MASTER_CSV_URL);
+            let text = resp.ok ? await resp.text() : '';
+            let usedMaster = false;
+
+            if (text && !text.includes('error') && text.trim().length > 50) {
+                people = processMasterRows(parseCSV(text));
+                usedMaster = true;
+            }
+
+            // Fallback to form responses if Master List is empty or doesn't exist
+            if (!usedMaster || people.length === 0) {
+                resp = await fetch(CSV_URL);
+                if (!resp.ok) throw new Error('Fetch failed');
+                text = await resp.text();
+                people = processRows(parseCSV(text));
+            }
+
             localStorage.setItem('thrive_cache', JSON.stringify(people));
         } catch (e) {
             const cached = localStorage.getItem('thrive_cache');
@@ -839,6 +1125,40 @@ function doGet(e) {
                 toast('Failed to load data');
             }
         }
+    }
+
+    function processMasterRows(rows) {
+        if (rows.length < 2) return [];
+        const result = [];
+        const naSet = new Set(['na', 'n/a', '/', '']);
+
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (row.length < 2) continue;
+
+            let cn = (row[0] || '').trim();
+            let en = (row[1] || '').trim();
+            const svc = (row[2] || '').trim();
+
+            if (naSet.has(cn.toLowerCase())) cn = '';
+            if (naSet.has(en.toLowerCase())) en = '';
+            if (!cn && !en) continue;
+
+            let service = '';
+            if (svc.includes('First') || svc.includes('第一') || svc === '1') service = '1';
+            else if (svc.includes('Second') || svc.includes('第二') || svc === '2') service = '2';
+
+            const key = `${cn}|${en}`.toLowerCase();
+            result.push({ chinese: cn, english: en, service, id: key });
+        }
+
+        return result.sort((a, b) => {
+            const an = (a.english || a.chinese).toLowerCase();
+            const bn = (b.english || b.chinese).toLowerCase();
+            if (a.english && !b.english) return -1;
+            if (!a.english && b.english) return 1;
+            return an.localeCompare(bn);
+        });
     }
 
     function parseCSV(text) {
@@ -1452,6 +1772,7 @@ function doGet(e) {
                 method: 'POST', mode: 'no-cors',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    action: 'attendance',
                     date: new Date().toLocaleDateString('en-US'),
                     time: entry.time,
                     chinese: entry.chinese,
@@ -1602,6 +1923,290 @@ function doGet(e) {
         } catch (e) {
             log.textContent += 'Error: ' + e.message + '\n';
         }
+    }
+
+    // ============================================================
+    // MANAGE NAMES
+    // ============================================================
+    let masterNames = [];
+    let editingIdx = -1;
+
+    async function showManage() {
+        document.getElementById('manage-overlay').classList.add('active');
+        document.getElementById('manage-search').value = '';
+        await loadMasterNames();
+        renderManageList();
+    }
+
+    async function loadMasterNames() {
+        const status = document.getElementById('manage-status');
+        const list = document.getElementById('manage-list');
+        list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading...</div>';
+
+        try {
+            const resp = await fetch(MASTER_CSV_URL);
+            if (!resp.ok) throw new Error('No Master List tab found');
+            const text = await resp.text();
+            if (!text || text.includes('error') || text.trim().length < 30) {
+                throw new Error('Master List is empty or not set up');
+            }
+            const rows = parseCSV(text);
+            masterNames = [];
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.length < 2) continue;
+                const cn = (row[0] || '').trim();
+                const en = (row[1] || '').trim();
+                const svc = (row[2] || '').trim();
+                if (!cn && !en) continue;
+                masterNames.push({ chinese: cn, english: en, service: svc });
+            }
+            masterNames.sort((a, b) => {
+                const an = (a.english || a.chinese).toLowerCase();
+                const bn = (b.english || b.chinese).toLowerCase();
+                return an.localeCompare(bn);
+            });
+            status.style.display = 'none';
+        } catch (e) {
+            masterNames = [];
+            status.style.display = 'block';
+            status.className = 'manage-status info';
+            status.textContent = 'No Master List yet. Tap "Initialize from Form Data" to create one.';
+        }
+    }
+
+    function renderManageList() {
+        const q = (document.getElementById('manage-search').value || '').trim().toLowerCase();
+        const list = document.getElementById('manage-list');
+        const count = document.getElementById('manage-count');
+        editingIdx = -1;
+
+        const filtered = masterNames.filter(n => {
+            if (!q) return true;
+            return (n.chinese || '').toLowerCase().includes(q) ||
+                   (n.english || '').toLowerCase().includes(q);
+        });
+
+        count.textContent = q
+            ? `Showing ${filtered.length} of ${masterNames.length} names`
+            : `${masterNames.length} names`;
+
+        if (!filtered.length) {
+            list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">' +
+                (masterNames.length ? 'No matches' : 'No names yet') + '</div>';
+            return;
+        }
+
+        list.innerHTML = filtered.map((n, idx) => {
+            const realIdx = masterNames.indexOf(n);
+            return `<div class="manage-item" id="manage-item-${realIdx}">
+                <div class="names">
+                    ${n.chinese ? `<span class="cn">${escH(n.chinese)}</span>` : ''}
+                    ${n.english ? `<span class="en">${escH(n.english)}</span>` : ''}
+                    ${n.service ? `<span style="font-size:10px;color:var(--text-secondary);margin-left:4px;">(${escH(n.service)})</span>` : ''}
+                </div>
+                <div class="actions">
+                    <button onclick="startEditName(${realIdx})" title="Edit">&#9998;</button>
+                    <button class="delete-btn" onclick="deleteName(${realIdx})" title="Delete">&#128465;</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function startEditName(idx) {
+        const n = masterNames[idx];
+        if (!n) return;
+        editingIdx = idx;
+
+        const el = document.getElementById(`manage-item-${idx}`);
+        if (!el) return;
+        el.className = 'manage-item editing';
+        el.innerHTML = `<div class="edit-form">
+            <input type="text" id="edit-cn-${idx}" value="${escH(n.chinese)}" placeholder="Chinese name">
+            <input type="text" id="edit-en-${idx}" value="${escH(n.english)}" placeholder="English name">
+            <div class="edit-actions">
+                <button class="btn btn-primary" onclick="saveEditName(${idx})">Save</button>
+                <button class="btn btn-cancel" onclick="renderManageList()">Cancel</button>
+            </div>
+        </div>`;
+
+        document.getElementById(`edit-cn-${idx}`).focus();
+    }
+
+    async function saveEditName(idx) {
+        const n = masterNames[idx];
+        const newCn = document.getElementById(`edit-cn-${idx}`).value.trim();
+        const newEn = document.getElementById(`edit-en-${idx}`).value.trim();
+        if (!newCn && !newEn) { toast('Enter at least one name'); return; }
+
+        const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+        if (!url) { toast('Set Apps Script URL in Settings first'); return; }
+
+        const status = document.getElementById('manage-status');
+        status.style.display = 'block';
+        status.className = 'manage-status info';
+        status.textContent = 'Saving...';
+
+        try {
+            await fetch(url, {
+                method: 'POST', mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'updateName',
+                    oldChinese: n.chinese,
+                    oldEnglish: n.english,
+                    chinese: newCn,
+                    english: newEn
+                })
+            });
+
+            // Update locally
+            masterNames[idx].chinese = newCn;
+            masterNames[idx].english = newEn;
+            status.className = 'manage-status success';
+            status.textContent = 'Saved!';
+            setTimeout(() => { status.style.display = 'none'; }, 1500);
+            renderManageList();
+
+            // Reload the main people list
+            await loadPeople();
+            renderGrid();
+        } catch (e) {
+            status.className = 'manage-status error';
+            status.textContent = 'Save failed: ' + (e?.message || 'Network error');
+        }
+    }
+
+    async function deleteName(idx) {
+        const n = masterNames[idx];
+        const display = n.chinese && n.english ? `${n.chinese} (${n.english})` : (n.chinese || n.english);
+        if (!confirm(`Delete "${display}"?`)) return;
+
+        const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+        if (!url) { toast('Set Apps Script URL in Settings first'); return; }
+
+        const status = document.getElementById('manage-status');
+        status.style.display = 'block';
+        status.className = 'manage-status info';
+        status.textContent = 'Deleting...';
+
+        try {
+            await fetch(url, {
+                method: 'POST', mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'deleteName',
+                    chinese: n.chinese,
+                    english: n.english
+                })
+            });
+
+            masterNames.splice(idx, 1);
+            status.className = 'manage-status success';
+            status.textContent = 'Deleted!';
+            setTimeout(() => { status.style.display = 'none'; }, 1500);
+            renderManageList();
+
+            await loadPeople();
+            renderGrid();
+        } catch (e) {
+            status.className = 'manage-status error';
+            status.textContent = 'Delete failed: ' + (e?.message || 'Network error');
+        }
+    }
+
+    async function addNameToMaster() {
+        const cn = document.getElementById('add-chinese').value.trim();
+        const en = document.getElementById('add-english').value.trim();
+        if (!cn && !en) { toast('Enter at least one name'); return; }
+
+        const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+        if (!url) { toast('Set Apps Script URL in Settings first'); return; }
+
+        const status = document.getElementById('manage-status');
+        status.style.display = 'block';
+        status.className = 'manage-status info';
+        status.textContent = 'Adding...';
+
+        try {
+            await fetch(url, {
+                method: 'POST', mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'addName',
+                    chinese: cn,
+                    english: en,
+                    service: ''
+                })
+            });
+
+            masterNames.push({ chinese: cn, english: en, service: '' });
+            masterNames.sort((a, b) => {
+                const an = (a.english || a.chinese).toLowerCase();
+                const bn = (b.english || b.chinese).toLowerCase();
+                return an.localeCompare(bn);
+            });
+
+            document.getElementById('add-chinese').value = '';
+            document.getElementById('add-english').value = '';
+            status.className = 'manage-status success';
+            status.textContent = `Added ${cn || en}!`;
+            setTimeout(() => { status.style.display = 'none'; }, 1500);
+            renderManageList();
+
+            await loadPeople();
+            renderGrid();
+        } catch (e) {
+            status.className = 'manage-status error';
+            status.textContent = 'Add failed: ' + (e?.message || 'Network error');
+        }
+    }
+
+    async function initMasterList() {
+        if (!confirm('This will create a "Master List" tab in your Google Sheet from the form responses, removing duplicates. Continue?')) return;
+
+        const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+        if (!url) { toast('Set Apps Script URL in Settings first'); return; }
+
+        const btn = document.getElementById('init-master-btn');
+        const status = document.getElementById('manage-status');
+        btn.disabled = true;
+        btn.textContent = 'Initializing...';
+        status.style.display = 'block';
+        status.className = 'manage-status info';
+        status.textContent = 'Creating Master List from form data... this may take a moment.';
+
+        try {
+            await fetch(url, {
+                method: 'POST', mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'initMasterList' })
+            });
+
+            // Since mode: no-cors, we can't read the response.
+            // Wait a moment then reload
+            await sleep(3000);
+            await loadMasterNames();
+            renderManageList();
+
+            status.className = 'manage-status success';
+            status.textContent = `Master List created with ${masterNames.length} names!`;
+
+            await loadPeople();
+            renderGrid();
+        } catch (e) {
+            status.className = 'manage-status error';
+            status.textContent = 'Failed: ' + (e?.message || 'Network error');
+        }
+
+        btn.disabled = false;
+        btn.textContent = 'Initialize from Form Data';
+    }
+
+    async function refreshManageList() {
+        await loadMasterNames();
+        renderManageList();
+        toast('Refreshed');
     }
 
     // ============================================================

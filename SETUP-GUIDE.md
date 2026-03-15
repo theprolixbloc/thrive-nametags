@@ -24,36 +24,17 @@ All options are 100% free for static sites.
 
 ---
 
-## Attendance Sync to Google Sheets (Optional)
+## Google Apps Script Setup (Attendance + Name Management)
 
 1. Open your [Google Sheet](https://docs.google.com/spreadsheets/d/1emTIXAFHBae-r6Zo3W48I_PBSMuPjC25dPnmNptz-bg/edit)
 2. Go to **Extensions > Apps Script**
-3. Delete any existing code, paste this:
-
-```javascript
-function doPost(e) {
-  var data = JSON.parse(e.postData.contents);
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Attendance');
-  if (!sheet) {
-    sheet = ss.insertSheet('Attendance');
-    sheet.appendRow(['Date', 'Time', 'Chinese Name', 'English Name']);
-    sheet.getRange('1:1').setFontWeight('bold');
-  }
-  sheet.appendRow([data.date, data.time, data.chinese || '', data.english || '']);
-  return ContentService.createTextOutput(JSON.stringify({status:'ok'}))
-    .setMimeType(ContentService.MimeType.JSON);.
-}
-
-function doGet(e) {
-  return ContentService.createTextOutput('Attendance script is running.');
-}
-```
-
+3. Delete any existing code, paste the script shown in the app's **Settings > Setup: Google Apps Script** section (the script handles attendance logging AND name management CRUD operations)
 4. Click **Deploy > New deployment**
 5. Type: **Web app**, Execute as: **Me**, Access: **Anyone**
 6. Click **Deploy**, authorize, copy the URL
 7. In the app, go to **Settings** (gear icon) and paste the URL
+
+**Important:** If you previously deployed the old attendance-only script, you must create a **new deployment** (not just save) for the updated script to take effect.
 
 ---
 
@@ -89,3 +70,12 @@ function doGet(e) {
 
 ### Adding Walk-Ins
 Tap the **+** button to create a name tag for someone not in the database.
+
+### Managing the Name List
+1. Tap the **pencil icon** (✎) in the header
+2. First time: tap **Initialize from Form Data** to create a Master List tab from your form responses (deduplicates automatically)
+3. **Search** names to find specific entries
+4. **Edit** (✎) to correct a name, **Delete** (🗑) to remove duplicates
+5. **Add** new names using the form at the bottom
+6. Changes sync to the "Master List" tab in your Google Sheet
+7. The app reads from the Master List tab first (falls back to form responses if not set up)
