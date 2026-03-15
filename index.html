@@ -861,9 +861,9 @@
             </div>
             <div class="modal-body">
                 <div class="setting-row">
-                    <label>Google Apps Script URL (attendance sync)</label>
-                    <input type="url" id="script-url" placeholder="https://script.google.com/macros/s/.../exec">
-                    <div class="hint">Optional. Syncs attendance to your Google Sheet automatically.</div>
+                    <label>Google Apps Script URL (override)</label>
+                    <input type="url" id="script-url" placeholder="Leave blank to use built-in default">
+                    <div class="hint">A default URL is built in. Only set this to override with a new deployment URL.</div>
                 </div>
                 <div class="setting-row">
                     <label>BLE Service UUID</label>
@@ -1115,6 +1115,11 @@ function doGet(e) {
         };
     }
 
+    // Helper: get active script URL (custom override or built-in default)
+    function getScriptUrl() {
+        return localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+    }
+
     // ============================================================
     // SEED DATA (from Excel spreadsheets — merged on Initialize)
     // ============================================================
@@ -1212,10 +1217,7 @@ function doGet(e) {
         updateBadge();
         setupPlatform();
 
-        // Auto-set the script URL if not already configured
-        if (!localStorage.getItem('thrive_script_url') && DEFAULT_SCRIPT_URL) {
-            localStorage.setItem('thrive_script_url', DEFAULT_SCRIPT_URL);
-        }
+        // Show the active script URL in settings (custom override or default)
         document.getElementById('script-url').value = localStorage.getItem('thrive_script_url') || '';
         document.getElementById('setting-service-uuid').value = BLE.config.serviceUuid;
     }
@@ -1978,7 +1980,7 @@ function doGet(e) {
     }
 
     async function syncAttendance(entry) {
-        const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+        const url = getScriptUrl();
         if (!url) return;
         try {
             await fetch(url, {
@@ -2259,7 +2261,7 @@ function doGet(e) {
         const newGrp = document.getElementById(`edit-grp-${idx}`).value.trim();
         if (!newCn && !newEn) { toast('Enter at least one name'); return; }
 
-        const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+        const url = getScriptUrl();
         if (!url) { toast('Set Apps Script URL in Settings first'); return; }
 
         const status = document.getElementById('manage-status');
@@ -2304,7 +2306,7 @@ function doGet(e) {
         const display = n.chinese && n.english ? `${n.chinese} (${n.english})` : (n.chinese || n.english);
         if (!confirm(`Delete "${display}"?`)) return;
 
-        const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+        const url = getScriptUrl();
         if (!url) { toast('Set Apps Script URL in Settings first'); return; }
 
         const status = document.getElementById('manage-status');
@@ -2343,7 +2345,7 @@ function doGet(e) {
         const grp = document.getElementById('add-group').value.trim();
         if (!cn && !en) { toast('Enter at least one name'); return; }
 
-        const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+        const url = getScriptUrl();
         if (!url) { toast('Set Apps Script URL in Settings first'); return; }
 
         const status = document.getElementById('manage-status');
@@ -2390,7 +2392,7 @@ function doGet(e) {
     async function initMasterList() {
         if (!confirm('This will create a "Master List" tab in your Google Sheet combining form responses + Excel data + family groupings, removing duplicates. Continue?')) return;
 
-        const url = localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
+        const url = getScriptUrl();
         if (!url) { toast('Set Apps Script URL in Settings first'); return; }
 
         const btn = document.getElementById('init-master-btn');
