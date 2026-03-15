@@ -1098,20 +1098,31 @@ function doGet(e) {
     async function loadPeople() {
         try {
             // Try Master List tab first
-            let resp = await fetch(MASTER_CSV_URL);
-            let text = resp.ok ? await resp.text() : '';
             let usedMaster = false;
+            try {
+                const resp = await fetch(MASTER_CSV_URL);
+                if (resp.ok) {
+                    const text = await resp.text();
+                    // Verify this is actually the Master List tab (not a fallback to Form Responses)
+                    // Master List has headers: "Chinese Name","English Name","Service"
+                    // Form Responses has "Timestamp" as first header
+                    if (text && text.trim().length > 30 &&
+                        !text.includes('error') &&
+                        !text.toLowerCase().includes('timestamp')) {
+                        const parsed = processMasterRows(parseCSV(text));
+                        if (parsed.length > 0) {
+                            people = parsed;
+                            usedMaster = true;
+                        }
+                    }
+                }
+            } catch {}
 
-            if (text && !text.includes('error') && text.trim().length > 50) {
-                people = processMasterRows(parseCSV(text));
-                usedMaster = true;
-            }
-
-            // Fallback to form responses if Master List is empty or doesn't exist
-            if (!usedMaster || people.length === 0) {
-                resp = await fetch(CSV_URL);
+            // Fallback to form responses if Master List doesn't exist or is empty
+            if (!usedMaster) {
+                const resp = await fetch(CSV_URL);
                 if (!resp.ok) throw new Error('Fetch failed');
-                text = await resp.text();
+                const text = await resp.text();
                 people = processRows(parseCSV(text));
             }
 
@@ -1949,6 +1960,10 @@ function doGet(e) {
             const text = await resp.text();
             if (!text || text.includes('error') || text.trim().length < 30) {
                 throw new Error('Master List is empty or not set up');
+            }
+            // Detect if Google fell back to Form Responses (has "Timestamp" column)
+            if (text.toLowerCase().includes('timestamp')) {
+                throw new Error('Master List tab not found — got Form Responses instead');
             }
             const rows = parseCSV(text);
             masterNames = [];
