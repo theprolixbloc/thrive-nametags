@@ -2268,11 +2268,42 @@ function doGet(e) {
         return { bitmap, bytesPerLine: bpl, width: w, height: h };
     }
 
-    function buildRasterCommand(bd) {
+    // TSPL2 protocol for Nelko PL70e and compatible printers
+    function buildTSPL2Command(bd) {
+        const { bitmap, bytesPerLine, width, height } = bd;
+        const enc = new TextEncoder();
+
+        // Invert bitmap: our format has 1=black, TSPL2 needs 0=black/1=white
+        const inverted = new Uint8Array(bitmap.length);
+        for (let i = 0; i < bitmap.length; i++) inverted[i] = bitmap[i] ^ 0xFF;
+
+        // Label dimensions in mm (203 DPI)
+        const widthMM = (width / 203 * 25.4).toFixed(1);
+        const heightMM = (height / 203 * 25.4).toFixed(1);
+
+        const setup = enc.encode(
+            `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
+            `GAP 3 mm,0 mm\r\n` +
+            `DIRECTION 0,0\r\n` +
+            `DENSITY 10\r\n` +
+            `CLS\r\n` +
+            `BITMAP 0,0,${bytesPerLine},${height},0,`
+        );
+        const footer = enc.encode(`PRINT 1\r\nEND\r\n`);
+
+        const cmd = new Uint8Array(setup.length + inverted.length + footer.length);
+        cmd.set(setup, 0);
+        cmd.set(inverted, setup.length);
+        cmd.set(footer, setup.length + inverted.length);
+        return cmd;
+    }
+
+    // ESC/POS raster fallback for non-Nelko printers
+    function buildEscPosCommand(bd) {
         const { bitmap, bytesPerLine, height } = bd;
         const header = new Uint8Array([
-            0x1B, 0x40,                         // ESC @ — Init
-            0x1D, 0x76, 0x30, 0x00,            // GS v 0 — Raster
+            0x1B, 0x40,
+            0x1D, 0x76, 0x30, 0x00,
             bytesPerLine & 0xFF, (bytesPerLine >> 8) & 0xFF,
             height & 0xFF, (height >> 8) & 0xFF,
         ]);
@@ -2281,28 +2312,6 @@ function doGet(e) {
         cmd.set(bitmap, header.length);
         cmd.set([0x1B, 0x64, 0x03, 0x0A], header.length + bitmap.length);
         return cmd;
-    }
-
-    function buildNelkoCommand(bd) {
-        const { bitmap, bytesPerLine, height } = bd;
-        const chunks = [];
-        chunks.push(new Uint8Array([0x1B, 0x40]));
-        chunks.push(new Uint8Array([
-            0x1B, 0x57,
-            LABEL_W & 0xFF, (LABEL_W >> 8) & 0xFF,
-            LABEL_H & 0xFF, (LABEL_H >> 8) & 0xFF,
-        ]));
-        for (let y = 0; y < height; y++) {
-            const hdr = new Uint8Array([0x1B, 0x2A, 0x21, bytesPerLine & 0xFF, (bytesPerLine >> 8) & 0xFF]);
-            const line = bitmap.slice(y * bytesPerLine, (y + 1) * bytesPerLine);
-            const buf = new Uint8Array(hdr.length + line.length + 1);
-            buf.set(hdr, 0);
-            buf.set(line, hdr.length);
-            buf[buf.length - 1] = 0x0A;
-            chunks.push(buf);
-        }
-        chunks.push(new Uint8Array([0x1B, 0x64, 0x02, 0x0A]));
-        return chunks;
     }
 
     async function sendToPrinter(data) {
@@ -2432,18 +2441,18 @@ function doGet(e) {
             const canvas = document.getElementById('label-canvas');
             const bd = canvasToMonoBitmap(canvas);
 
-            // Try ESC/POS raster first
+            // Try TSPL2 (Nelko PL70e) first, then ESC/POS fallback
             let printed = false;
             try {
-                await sendToPrinter(buildRasterCommand(bd));
+                await sendToPrinter(buildTSPL2Command(bd));
                 printed = true;
             } catch (e1) {
-                console.warn('[BLE] ESC/POS failed, trying Nelko protocol:', e1);
+                console.warn('[BLE] TSPL2 failed, trying ESC/POS:', e1);
                 st.textContent = 'Trying alternate protocol...';
             }
 
             if (!printed) {
-                await sendToPrinter(buildNelkoCommand(bd));
+                await sendToPrinter(buildEscPosCommand(bd));
             }
 
             st.className = 'print-status success';
@@ -2550,13 +2559,13 @@ function doGet(e) {
                 const bd = canvasToMonoBitmap(canvas);
                 let ok = false;
                 try {
-                    await sendToPrinter(buildRasterCommand(bd));
+                    await sendToPrinter(buildTSPL2Command(bd));
                     ok = true;
                 } catch {
                     st.textContent = `Trying alt protocol for ${name}...`;
                 }
                 if (!ok) {
-                    await sendToPrinter(buildNelkoCommand(bd));
+                    await sendToPrinter(buildEscPosCommand(bd));
                 }
 
                 // Log attendance for this member
@@ -2773,11 +2782,11 @@ function doGet(e) {
                     const bd = canvasToMonoBitmap(canvas);
                     let ok = false;
                     try {
-                        await sendToPrinter(buildRasterCommand(bd));
+                        await sendToPrinter(buildTSPL2Command(bd));
                         ok = true;
                     } catch { /* try alt protocol */ }
                     if (!ok) {
-                        await sendToPrinter(buildNelkoCommand(bd));
+                        await sendToPrinter(buildEscPosCommand(bd));
                     }
 
                     // Remove from queue after successful print
