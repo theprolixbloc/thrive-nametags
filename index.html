@@ -1026,6 +1026,13 @@
                     <div class="hint">A default URL is built in. Only set this to override with a new deployment URL.</div>
                 </div>
                 <div class="setting-row">
+                    <label style="display:flex;align-items:center;gap:10px;">
+                        <input type="checkbox" id="setting-bitmap-mode" style="width:18px;height:18px;">
+                        Use Bitmap Print Mode (slower but exact)
+                    </label>
+                    <div class="hint">Default is fast text mode. Switch to bitmap if Chinese characters print incorrectly.</div>
+                </div>
+                <div class="setting-row">
                     <label>Device Name</label>
                     <input type="text" id="setting-device-name" placeholder="e.g. iPad-Front-Desk">
                     <div class="hint">Identify this device in the admin panel.</div>
@@ -2195,7 +2202,60 @@ function doGet(e) {
         return { bitmap, bytesPerLine: bpl, width: w, height: h };
     }
 
-    // TSPL2 protocol for Nelko PL70e and compatible printers
+    // TSPL2 TEXT mode — sends text strings directly to the printer (~200 bytes, nearly instant)
+    function buildTSPL2TextCommand(chinese, english) {
+        const enc = new TextEncoder();
+        const widthMM = (LABEL_W / 203 * 25.4).toFixed(1);
+        const heightMM = (LABEL_H / 203 * 25.4).toFixed(1);
+        const hasCN = !!chinese, hasEN = !!english;
+
+        let cmds =
+            `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
+            `GAP 3 mm,0 mm\r\n` +
+            `DIRECTION 0,0\r\n` +
+            `DENSITY 10\r\n` +
+            `CODEPAGE UTF-8\r\n` +
+            `CLS\r\n`;
+
+        if (hasCN && hasEN) {
+            // Chinese: TST24.BF2 at 24×24 base, multiplied to ~120 dots tall
+            const cnMult = 5;
+            const cnCharW = 24 * cnMult;
+            const cnTotalW = chinese.length * cnCharW;
+            const cnX = Math.max(10, Math.floor((LABEL_W - cnTotalW) / 2));
+            const cnY = Math.floor(LABEL_H * 0.36 - (24 * cnMult) / 2);
+
+            // English: Font "4" (24×32 base), multiplied to ~64 dots tall
+            const enMult = 2;
+            const enCharW = 16 * enMult; // approximate avg width for proportional text
+            const enTotalW = english.length * enCharW;
+            const enX = Math.max(10, Math.floor((LABEL_W - enTotalW) / 2));
+            const enY = Math.floor(LABEL_H * 0.72 - (32 * enMult) / 2);
+
+            cmds += `TEXT ${cnX},${cnY},"TST24.BF2",0,${cnMult},${cnMult},"${chinese}"\r\n`;
+            cmds += `TEXT ${enX},${enY},"4",0,${enMult},${enMult},"${english}"\r\n`;
+        } else if (hasCN) {
+            const cnMult = 7;
+            const cnCharW = 24 * cnMult;
+            const cnTotalW = chinese.length * cnCharW;
+            const cnX = Math.max(10, Math.floor((LABEL_W - cnTotalW) / 2));
+            const cnY = Math.floor(LABEL_H / 2 - (24 * cnMult) / 2);
+            cmds += `TEXT ${cnX},${cnY},"TST24.BF2",0,${cnMult},${cnMult},"${chinese}"\r\n`;
+        } else if (hasEN) {
+            const enMult = 3;
+            const enCharW = 16 * enMult;
+            const enTotalW = english.length * enCharW;
+            const enX = Math.max(10, Math.floor((LABEL_W - enTotalW) / 2));
+            const enY = Math.floor(LABEL_H / 2 - (32 * enMult) / 2);
+            cmds += `TEXT ${enX},${enY},"4",0,${enMult},${enMult},"${english}"\r\n`;
+        }
+
+        cmds += `PRINT 1\r\nEND\r\n`;
+        console.log('[TSPL2-TEXT]', cmds.length, 'bytes');
+        return enc.encode(cmds);
+    }
+
+    // TSPL2 BITMAP mode — sends rendered image (slower but guaranteed correct)
     // Optimized: only sends non-white rows to minimize BLE transfer time
     function buildTSPL2Command(bd) {
         const { bitmap, bytesPerLine, width, height } = bd;
@@ -2400,21 +2460,26 @@ function doGet(e) {
         st.textContent = 'Sending to printer...';
 
         try {
-            const canvas = document.getElementById('label-canvas');
-            const bd = canvasToMonoBitmap(canvas);
+            const cn = selectedPerson?.chinese || '';
+            const en = selectedPerson?.english || '';
+            const useBitmap = localStorage.getItem('thrive_print_mode') === 'bitmap';
 
-            // Try TSPL2 (Nelko PL70e) first, then ESC/POS fallback
-            let printed = false;
-            try {
+            if (!useBitmap) {
+                // Fast path: TEXT commands (~200 bytes, <1 second)
+                try {
+                    await sendToPrinter(buildTSPL2TextCommand(cn, en));
+                } catch (e1) {
+                    console.warn('[BLE] TEXT mode failed, falling back to bitmap:', e1);
+                    st.textContent = 'Trying bitmap mode...';
+                    const canvas = document.getElementById('label-canvas');
+                    const bd = canvasToMonoBitmap(canvas);
+                    await sendToPrinter(buildTSPL2Command(bd));
+                }
+            } else {
+                // Bitmap path: rendered image (~10KB, ~5-10 seconds)
+                const canvas = document.getElementById('label-canvas');
+                const bd = canvasToMonoBitmap(canvas);
                 await sendToPrinter(buildTSPL2Command(bd));
-                printed = true;
-            } catch (e1) {
-                console.warn('[BLE] TSPL2 failed, trying ESC/POS:', e1);
-                st.textContent = 'Trying alternate protocol...';
-            }
-
-            if (!printed) {
-                await sendToPrinter(buildEscPosCommand(bd));
             }
 
             st.className = 'print-status success';
@@ -2735,20 +2800,16 @@ function doGet(e) {
                     queueDebug(`🖨️ Printing: ${name}...`);
                     toast(`🖨️ Printing: ${name}...`);
 
-                    // Render label on an offscreen canvas
-                    const canvas = document.createElement('canvas');
-                    canvas.width = LABEL_W;
-                    canvas.height = LABEL_H;
-                    renderLabel(job.chinese, job.english, canvas);
-
-                    const bd = canvasToMonoBitmap(canvas);
-                    let ok = false;
-                    try {
+                    const useBitmap = localStorage.getItem('thrive_print_mode') === 'bitmap';
+                    if (!useBitmap) {
+                        await sendToPrinter(buildTSPL2TextCommand(job.chinese || '', job.english || ''));
+                    } else {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = LABEL_W;
+                        canvas.height = LABEL_H;
+                        renderLabel(job.chinese, job.english, canvas);
+                        const bd = canvasToMonoBitmap(canvas);
                         await sendToPrinter(buildTSPL2Command(bd));
-                        ok = true;
-                    } catch { /* try alt protocol */ }
-                    if (!ok) {
-                        await sendToPrinter(buildEscPosCommand(bd));
                     }
 
                     // Remove from queue after successful print
@@ -3104,6 +3165,7 @@ function doGet(e) {
     // ============================================================
     function showSettings() {
         document.getElementById('setting-printer-mode').checked = isPrinterMode();
+        document.getElementById('setting-bitmap-mode').checked = localStorage.getItem('thrive_print_mode') === 'bitmap';
         document.getElementById('settings-overlay').classList.add('active');
     }
 
@@ -3111,10 +3173,12 @@ function doGet(e) {
         const url = document.getElementById('script-url').value.trim();
         const svc = document.getElementById('setting-service-uuid').value.trim();
         const devName = document.getElementById('setting-device-name').value.trim();
+        const bitmapMode = document.getElementById('setting-bitmap-mode').checked;
         if (url) localStorage.setItem('thrive_script_url', url);
         else localStorage.removeItem('thrive_script_url');
         if (svc) { BLE.config.serviceUuid = svc; localStorage.setItem('thrive_ble_config', JSON.stringify(BLE.config)); }
         if (devName !== getDeviceName()) { setDeviceName(devName); sendHeartbeat(); }
+        localStorage.setItem('thrive_print_mode', bitmapMode ? 'bitmap' : 'text');
         closeModalDirect('settings-overlay');
         toast('Settings saved');
     }
