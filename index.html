@@ -2202,6 +2202,9 @@ function doGet(e) {
             btn.textContent = 'Connected';
             btn.classList.add('connected');
 
+            // Process any pending print queue jobs now that BLE is ready
+            if (isPrinterMode()) setTimeout(processPendingQueue, 500);
+
             device.addEventListener('gattserverdisconnected', () => {
                 BLE.connected = false;
                 BLE.writeChar = null;
@@ -2604,6 +2607,7 @@ function doGet(e) {
     // ============================================================
     let printQueueListener = null;
     let printQueueProcessing = false;
+    let pendingQueueInterval = null;
 
     async function submitPrintJob(person) {
         if (!fbDb) { toast('Print queue unavailable'); return false; }
@@ -2704,60 +2708,87 @@ function doGet(e) {
 
     function startPrintQueueListener() {
         if (!fbDb || printQueueListener) return;
+
+        // Listen for new jobs in real-time — triggers processPendingQueue
         const ref = fbDb.ref('printQueue').orderByChild('status').equalTo('pending');
-        printQueueListener = ref.on('child_added', async (snapshot) => {
-            if (!isPrinterMode() || !BLE.connected) return;
-
-            // Wait if currently processing another job
-            while (printQueueProcessing) await sleep(300);
-            printQueueProcessing = true;
-
-            const job = snapshot.val();
-            const jobKey = snapshot.key;
-            const name = job.english || job.chinese || 'Unknown';
-
-            try {
-                toast(`🖨️ Printing: ${name}...`);
-
-                // Render label on an offscreen canvas
-                const canvas = document.createElement('canvas');
-                canvas.width = LABEL_W;
-                canvas.height = LABEL_H;
-                renderLabel(job.chinese, job.english, canvas);
-
-                const bd = canvasToMonoBitmap(canvas);
-                let ok = false;
-                try {
-                    await sendToPrinter(buildRasterCommand(bd));
-                    ok = true;
-                } catch { /* try alt protocol */ }
-                if (!ok) {
-                    await sendToPrinter(buildNelkoCommand(bd));
-                }
-
-                // Remove from queue
-                await fbDb.ref('printQueue/' + jobKey).remove();
-                toast(`✓ Printed: ${name}`);
-
-                // Small delay between prints
-                await sleep(800);
-            } catch (e) {
-                toast(`Print failed: ${name}`);
-                // Mark as failed so it doesn't retry forever
-                try {
-                    await fbDb.ref('printQueue/' + jobKey).update({ status: 'failed', error: e?.message || 'Unknown' });
-                } catch {}
-            } finally {
-                printQueueProcessing = false;
-            }
+        printQueueListener = ref.on('child_added', () => {
+            processPendingQueue();
         });
+
+        // Poll every 5 seconds as a safety net (catches jobs missed due to timing)
+        if (!pendingQueueInterval) {
+            pendingQueueInterval = setInterval(processPendingQueue, 5000);
+        }
+
+        // Process any existing pending jobs right now
+        processPendingQueue();
         toast('🖨️ Printer mode active — listening for jobs');
+    }
+
+    async function processPendingQueue() {
+        if (!fbDb || !isPrinterMode() || !BLE.connected || printQueueProcessing) return;
+
+        try {
+            const snap = await fbDb.ref('printQueue').orderByChild('status').equalTo('pending').once('value');
+            if (!snap.exists()) return;
+
+            // Collect and sort jobs by timestamp
+            const jobs = [];
+            snap.forEach(child => { jobs.push({ key: child.key, ...child.val() }); });
+            jobs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+            for (const job of jobs) {
+                if (!BLE.connected || !isPrinterMode()) break;
+                printQueueProcessing = true;
+                const name = job.english || job.chinese || 'Unknown';
+
+                try {
+                    toast(`🖨️ Printing: ${name}...`);
+
+                    // Render label on an offscreen canvas
+                    const canvas = document.createElement('canvas');
+                    canvas.width = LABEL_W;
+                    canvas.height = LABEL_H;
+                    renderLabel(job.chinese, job.english, canvas);
+
+                    const bd = canvasToMonoBitmap(canvas);
+                    let ok = false;
+                    try {
+                        await sendToPrinter(buildRasterCommand(bd));
+                        ok = true;
+                    } catch { /* try alt protocol */ }
+                    if (!ok) {
+                        await sendToPrinter(buildNelkoCommand(bd));
+                    }
+
+                    // Remove from queue after successful print
+                    await fbDb.ref('printQueue/' + job.key).remove();
+                    toast(`✓ Printed: ${name}`);
+
+                    // Small delay between prints
+                    await sleep(800);
+                } catch (e) {
+                    toast(`Print failed: ${name}`);
+                    try {
+                        await fbDb.ref('printQueue/' + job.key).update({ status: 'failed', error: e?.message || 'Unknown' });
+                    } catch {}
+                } finally {
+                    printQueueProcessing = false;
+                }
+            }
+        } catch (e) {
+            console.warn('processPendingQueue error:', e);
+        }
     }
 
     function stopPrintQueueListener() {
         if (printQueueListener && fbDb) {
             fbDb.ref('printQueue').off('child_added', printQueueListener);
             printQueueListener = null;
+        }
+        if (pendingQueueInterval) {
+            clearInterval(pendingQueueInterval);
+            pendingQueueInterval = null;
         }
     }
 
