@@ -2316,27 +2316,24 @@ function doGet(e) {
 
     async function sendToPrinter(data) {
         if (!BLE.writeChar) throw new Error('Printer not connected');
-        const CHUNK = 512, DELAY = 20;
+        const noResp = BLE.writeChar.properties.writeWithoutResponse;
+        const CHUNK = noResp ? 512 : 200;
+        const DELAY = noResp ? 3 : 15;
+
+        async function writeChunk(chunk) {
+            if (noResp) await BLE.writeChar.writeValueWithoutResponse(chunk);
+            else await BLE.writeChar.writeValue(chunk);
+        }
 
         if (data instanceof Uint8Array) {
             for (let off = 0; off < data.length; off += CHUNK) {
-                const chunk = data.slice(off, Math.min(off + CHUNK, data.length));
-                if (BLE.writeChar.properties.writeWithoutResponse) {
-                    await BLE.writeChar.writeValueWithoutResponse(chunk);
-                } else {
-                    await BLE.writeChar.writeValue(chunk);
-                }
+                await writeChunk(data.slice(off, Math.min(off + CHUNK, data.length)));
                 if (off + CHUNK < data.length) await sleep(DELAY);
             }
         } else if (Array.isArray(data)) {
             for (const part of data) {
                 for (let off = 0; off < part.length; off += CHUNK) {
-                    const chunk = part.slice(off, Math.min(off + CHUNK, part.length));
-                    if (BLE.writeChar.properties.writeWithoutResponse) {
-                        await BLE.writeChar.writeValueWithoutResponse(chunk);
-                    } else {
-                        await BLE.writeChar.writeValue(chunk);
-                    }
+                    await writeChunk(part.slice(off, Math.min(off + CHUNK, part.length)));
                     await sleep(DELAY);
                 }
             }
