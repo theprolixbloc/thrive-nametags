@@ -907,8 +907,9 @@
         </header>
 
         <!-- Printer Mode Indicator -->
-        <div id="printer-mode-indicator" style="display:none;align-items:center;justify-content:center;gap:8px;padding:8px 16px;background:linear-gradient(135deg,#10b981,#059669);color:white;font-size:13px;font-weight:600;border-radius:10px;margin:0 16px 8px;">
-            🖨️ Printer Mode Active — Receiving print jobs wirelessly
+        <div id="printer-mode-indicator" style="display:none;align-items:center;justify-content:center;flex-direction:column;gap:4px;padding:10px 16px;background:linear-gradient(135deg,#10b981,#059669);color:white;font-size:13px;font-weight:600;border-radius:10px;margin:0 16px 8px;">
+            <div>🖨️ Printer Mode Active — Receiving print jobs wirelessly</div>
+            <div id="queue-debug" style="font-size:11px;font-weight:400;opacity:0.9;"></div>
         </div>
 
         <!-- Printer Connection Bar -->
@@ -2706,12 +2707,23 @@ function doGet(e) {
         }
     }
 
+    function queueDebug(msg) {
+        console.log('[PrintQueue]', msg);
+        const el = document.getElementById('queue-debug');
+        if (el) el.textContent = msg;
+    }
+
     function startPrintQueueListener() {
-        if (!fbDb || printQueueListener) return;
+        if (!fbDb) { queueDebug('⚠ Firebase not available'); return; }
+        if (printQueueListener) { queueDebug('Listener already active'); return; }
+
+        queueDebug('Starting listener...');
 
         // Listen for new jobs in real-time — triggers processPendingQueue
         const ref = fbDb.ref('printQueue').orderByChild('status').equalTo('pending');
-        printQueueListener = ref.on('child_added', () => {
+        printQueueListener = ref.on('child_added', (snap) => {
+            const job = snap.val();
+            queueDebug(`New job received: ${job?.english || job?.chinese || '?'}`);
             processPendingQueue();
         });
 
@@ -2726,16 +2738,27 @@ function doGet(e) {
     }
 
     async function processPendingQueue() {
-        if (!fbDb || !isPrinterMode() || !BLE.connected || printQueueProcessing) return;
+        // Debug: show why we might skip
+        if (!fbDb) { queueDebug('⚠ No Firebase'); return; }
+        if (!isPrinterMode()) { queueDebug('⚠ Printer mode OFF'); return; }
+        if (!BLE.connected) { queueDebug('⏳ Waiting for BLE connection...'); return; }
+        if (printQueueProcessing) { queueDebug('⏳ Already processing...'); return; }
+
+        queueDebug('Checking for pending jobs...');
 
         try {
             const snap = await fbDb.ref('printQueue').orderByChild('status').equalTo('pending').once('value');
-            if (!snap.exists()) return;
+            if (!snap.exists()) {
+                queueDebug('✓ Queue empty — ready for jobs');
+                return;
+            }
 
             // Collect and sort jobs by timestamp
             const jobs = [];
             snap.forEach(child => { jobs.push({ key: child.key, ...child.val() }); });
             jobs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+            queueDebug(`Found ${jobs.length} pending job(s)`);
 
             for (const job of jobs) {
                 if (!BLE.connected || !isPrinterMode()) break;
@@ -2743,6 +2766,7 @@ function doGet(e) {
                 const name = job.english || job.chinese || 'Unknown';
 
                 try {
+                    queueDebug(`🖨️ Printing: ${name}...`);
                     toast(`🖨️ Printing: ${name}...`);
 
                     // Render label on an offscreen canvas
@@ -2763,11 +2787,13 @@ function doGet(e) {
 
                     // Remove from queue after successful print
                     await fbDb.ref('printQueue/' + job.key).remove();
+                    queueDebug(`✓ Printed: ${name}`);
                     toast(`✓ Printed: ${name}`);
 
                     // Small delay between prints
                     await sleep(800);
                 } catch (e) {
+                    queueDebug(`✗ Failed: ${name} — ${e?.message}`);
                     toast(`Print failed: ${name}`);
                     try {
                         await fbDb.ref('printQueue/' + job.key).update({ status: 'failed', error: e?.message || 'Unknown' });
@@ -2776,7 +2802,9 @@ function doGet(e) {
                     printQueueProcessing = false;
                 }
             }
+            queueDebug('✓ Queue empty — ready for jobs');
         } catch (e) {
+            queueDebug(`✗ Error: ${e?.message}`);
             console.warn('processPendingQueue error:', e);
         }
     }
