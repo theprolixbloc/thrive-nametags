@@ -875,6 +875,8 @@
             .name-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
         }
     </style>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 </head>
 <body>
     <!-- Lock Screen (shown outside service hours for non-admins) -->
@@ -903,6 +905,11 @@
                 <button class="icon-btn" onclick="refreshData()" title="Refresh" id="refresh-btn">&#8635;</button>
             </div>
         </header>
+
+        <!-- Printer Mode Indicator -->
+        <div id="printer-mode-indicator" style="display:none;align-items:center;justify-content:center;gap:8px;padding:8px 16px;background:linear-gradient(135deg,#10b981,#059669);color:white;font-size:13px;font-weight:600;border-radius:10px;margin:0 16px 8px;">
+            🖨️ Printer Mode Active — Receiving print jobs wirelessly
+        </div>
 
         <!-- Printer Connection Bar -->
         <div class="printer-bar">
@@ -1005,6 +1012,13 @@
                 <button class="icon-btn" onclick="closeModalDirect('settings-overlay')">&#10005;</button>
             </div>
             <div class="modal-body">
+                <div class="setting-row" style="background:var(--success-bg);padding:12px;border-radius:8px;margin-bottom:8px;">
+                    <label style="display:flex;align-items:center;gap:10px;font-weight:600;">
+                        <input type="checkbox" id="setting-printer-mode" onchange="setPrinterMode(this.checked)" style="width:20px;height:20px;">
+                        🖨️ Printer Mode
+                    </label>
+                    <div class="hint">Turn ON for the device connected to the Nelko printer. Other devices will send print jobs to this device wirelessly.</div>
+                </div>
                 <div class="setting-row">
                     <label>Google Apps Script URL (override)</label>
                     <input type="url" id="script-url" placeholder="Leave blank to use built-in default">
@@ -1331,6 +1345,24 @@ function doGet(e) {
     const SERVICE_WINDOW = { day: 0, startHour: 9, startMin: 0, endHour: 13, endMin: 30 }; // Sunday 9:00 AM – 1:30 PM
     const ADMIN_HASH = '99cefae521c22dcaf0458ea9ce1592a8f5f44e5d76b8e88c17c343ed4010c7b0';
 
+    // Firebase Print Queue
+    const FIREBASE_CONFIG = {
+        apiKey: "AIzaSyAcajT7I7s522JXWXfsqZgpQDAzQCAfoK8",
+        authDomain: "thrive-name-tags.firebaseapp.com",
+        databaseURL: "https://thrive-name-tags-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "thrive-name-tags",
+        storageBucket: "thrive-name-tags.firebasestorage.app",
+        messagingSenderId: "199666391790",
+        appId: "1:199666391790:web:e6164dc1b0a1bd69af31ff"
+    };
+    let fbApp, fbDb;
+    try {
+        fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+        fbDb = firebase.database();
+    } catch (e) {
+        console.warn('Firebase init failed:', e);
+    }
+
     // ============================================================
     // STATE
     // ============================================================
@@ -1373,6 +1405,21 @@ function doGet(e) {
             groups.push(groupName);
             p.group = groups.join(', ');
         }
+    }
+
+    // Printer Mode (designates this device as the print station)
+    function isPrinterMode() { return localStorage.getItem('thrive_printer_mode') === 'true'; }
+    function setPrinterMode(val) {
+        localStorage.setItem('thrive_printer_mode', val ? 'true' : 'false');
+        if (val) startPrintQueueListener();
+        else stopPrintQueueListener();
+        updatePrinterModeUI();
+    }
+    function updatePrinterModeUI() {
+        const indicator = document.getElementById('printer-mode-indicator');
+        if (indicator) indicator.style.display = isPrinterMode() ? 'flex' : 'none';
+        const toggle = document.getElementById('setting-printer-mode');
+        if (toggle) toggle.checked = isPrinterMode();
     }
 
     // BLE Printer State
@@ -1651,6 +1698,10 @@ function doGet(e) {
         document.getElementById('script-url').value = localStorage.getItem('thrive_script_url') || '';
         document.getElementById('setting-service-uuid').value = BLE.config.serviceUuid;
         document.getElementById('setting-device-name').value = getDeviceName();
+        updatePrinterModeUI();
+
+        // Start print queue listener if in printer mode
+        if (isPrinterMode()) startPrintQueueListener();
 
         // Audit + heartbeat
         auditLog('app_open', people.length + ' names loaded');
@@ -2306,18 +2357,34 @@ function doGet(e) {
         const actions = document.getElementById('print-actions');
         let buttons = '';
 
-        // Group batch print buttons (BLE only) — one button per group
+        // Group batch print buttons — one button per group
         const personGroups = selectedPerson ? getGroups(selectedPerson) : [];
-        if (personGroups.length > 0 && BLE.connected) {
+        if (personGroups.length > 0) {
             for (const grp of personGroups) {
                 const grpMembers = people.filter(p => inGroup(p, grp));
                 if (grpMembers.length > 1) {
-                    buttons += `<button class="btn btn-success" onclick="doBatchPrint('${esc(grp)}')" id="btn-batch-${esc(grp)}">Print ${esc(grp)} (${grpMembers.length})</button>`;
+                    if (isPrinterMode() && BLE.connected) {
+                        buttons += `<button class="btn btn-success" onclick="doBatchPrint('${esc(grp)}')" id="btn-batch-${esc(grp)}">Print ${esc(grp)} (${grpMembers.length})</button>`;
+                    } else if (fbDb) {
+                        buttons += `<button class="btn btn-success" onclick="doQueueBatchPrint('${esc(grp)}')">Print ${esc(grp)} (${grpMembers.length})</button>`;
+                    }
                 }
             }
         }
 
-        if (BLE.connected) {
+        if (isPrinterMode() && BLE.connected) {
+            // Printer device: direct BLE print
+            buttons += '<button class="btn btn-primary" onclick="doBLEPrint()" id="btn-ble-print">Print</button>';
+            buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
+            tip.style.display = 'none';
+        } else if (fbDb) {
+            // Non-printer device (or printer not connected): send to print queue
+            buttons += '<button class="btn btn-primary" onclick="doQueuePrint()" id="btn-queue-print">🖨️ Print</button>';
+            buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
+            tip.style.display = 'block';
+            tip.innerHTML = BLE.connected ? 'Sending to printer device via cloud queue.' : 'Print job will be sent wirelessly to the printer device.';
+        } else if (BLE.connected) {
+            // Firebase unavailable but BLE connected: direct print
             buttons += '<button class="btn btn-primary" onclick="doBLEPrint()" id="btn-ble-print">Print</button>';
             buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
             tip.style.display = 'none';
@@ -2326,15 +2393,11 @@ function doGet(e) {
             buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
             tip.style.display = 'block';
             tip.innerHTML = 'Tap <b>Share to Nelko App</b>, select the Nelko app from the share sheet, then print from there.';
-        } else if (HAS_BLE && !BLE.connected) {
-            buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
-            buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
-            tip.style.display = 'block';
-            tip.textContent = 'Connect the printer first for direct BLE printing.';
         } else {
             buttons += '<button class="btn btn-primary" onclick="doShare()">Share</button>';
             buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
-            tip.style.display = 'none';
+            tip.style.display = 'block';
+            tip.textContent = 'Connect the printer first, or enable Printer Mode on another device.';
         }
 
         buttons += '<button class="btn btn-cancel" onclick="closeModalDirect(\'preview-overlay\')">Cancel</button>';
@@ -2534,6 +2597,168 @@ function doGet(e) {
         }
 
         renderGrid();
+    }
+
+    // ============================================================
+    // FIREBASE PRINT QUEUE
+    // ============================================================
+    let printQueueListener = null;
+    let printQueueProcessing = false;
+
+    async function submitPrintJob(person) {
+        if (!fbDb) { toast('Print queue unavailable'); return false; }
+        try {
+            await fbDb.ref('printQueue').push({
+                chinese: person.chinese || '',
+                english: person.english || '',
+                isKid: isKid(person),
+                personId: person.id,
+                service: person.service || '',
+                deviceId: getDeviceId(),
+                deviceName: getDeviceName(),
+                timestamp: firebase.database.ServerValue.TIMESTAMP,
+                status: 'pending'
+            });
+            return true;
+        } catch (e) {
+            console.error('submitPrintJob:', e);
+            toast('Failed to send print job');
+            return false;
+        }
+    }
+
+    async function submitBatchPrintJobs(members, groupName) {
+        if (!fbDb) { toast('Print queue unavailable'); return false; }
+        try {
+            const updates = {};
+            for (const person of members) {
+                const key = fbDb.ref('printQueue').push().key;
+                updates[key] = {
+                    chinese: person.chinese || '',
+                    english: person.english || '',
+                    isKid: isKid(person),
+                    personId: person.id,
+                    service: person.service || '',
+                    deviceId: getDeviceId(),
+                    deviceName: getDeviceName(),
+                    timestamp: firebase.database.ServerValue.TIMESTAMP,
+                    status: 'pending'
+                };
+            }
+            await fbDb.ref('printQueue').update(updates);
+            return true;
+        } catch (e) {
+            console.error('submitBatchPrintJobs:', e);
+            toast('Failed to send batch');
+            return false;
+        }
+    }
+
+    async function doQueuePrint() {
+        if (!selectedPerson) return;
+        const st = document.getElementById('print-status');
+        const actions = document.getElementById('print-actions');
+        st.style.display = 'block';
+        st.className = 'print-status info';
+        st.textContent = 'Sending to printer...';
+        actions.querySelectorAll('button').forEach(b => { b.disabled = true; });
+
+        const ok = await submitPrintJob(selectedPerson);
+        if (ok) {
+            logAttendance(selectedPerson);
+            renderGrid();
+            st.className = 'print-status success';
+            st.textContent = 'Sent to printer! 🖨️';
+            setTimeout(() => closeModalDirect('preview-overlay'), 1200);
+        } else {
+            st.className = 'print-status error';
+            st.textContent = 'Failed to send. Try Share instead.';
+            actions.querySelectorAll('button').forEach(b => { b.disabled = false; });
+        }
+    }
+
+    async function doQueueBatchPrint(groupName) {
+        const members = people.filter(p => inGroup(p, groupName));
+        if (!members.length) { toast('No group members found'); return; }
+
+        const st = document.getElementById('print-status');
+        const actions = document.getElementById('print-actions');
+        st.style.display = 'block';
+        st.className = 'print-status info';
+        st.textContent = `Sending ${members.length} ${groupName} tags to printer...`;
+        actions.querySelectorAll('button').forEach(b => { b.disabled = true; });
+
+        const ok = await submitBatchPrintJobs(members, groupName);
+        if (ok) {
+            for (const m of members) logAttendance(m);
+            renderGrid();
+            st.className = 'print-status success';
+            st.textContent = `Sent ${members.length} ${groupName} tags! 🖨️`;
+            setTimeout(() => closeModalDirect('preview-overlay'), 1200);
+        } else {
+            st.className = 'print-status error';
+            st.textContent = 'Failed to send batch.';
+            actions.querySelectorAll('button').forEach(b => { b.disabled = false; });
+        }
+    }
+
+    function startPrintQueueListener() {
+        if (!fbDb || printQueueListener) return;
+        const ref = fbDb.ref('printQueue').orderByChild('status').equalTo('pending');
+        printQueueListener = ref.on('child_added', async (snapshot) => {
+            if (!isPrinterMode() || !BLE.connected) return;
+
+            // Wait if currently processing another job
+            while (printQueueProcessing) await sleep(300);
+            printQueueProcessing = true;
+
+            const job = snapshot.val();
+            const jobKey = snapshot.key;
+            const name = job.english || job.chinese || 'Unknown';
+
+            try {
+                toast(`🖨️ Printing: ${name}...`);
+
+                // Render label on an offscreen canvas
+                const canvas = document.createElement('canvas');
+                canvas.width = LABEL_W;
+                canvas.height = LABEL_H;
+                renderLabel(job.chinese, job.english, canvas);
+
+                const bd = canvasToMonoBitmap(canvas);
+                let ok = false;
+                try {
+                    await sendToPrinter(buildRasterCommand(bd));
+                    ok = true;
+                } catch { /* try alt protocol */ }
+                if (!ok) {
+                    await sendToPrinter(buildNelkoCommand(bd));
+                }
+
+                // Remove from queue
+                await fbDb.ref('printQueue/' + jobKey).remove();
+                toast(`✓ Printed: ${name}`);
+
+                // Small delay between prints
+                await sleep(800);
+            } catch (e) {
+                toast(`Print failed: ${name}`);
+                // Mark as failed so it doesn't retry forever
+                try {
+                    await fbDb.ref('printQueue/' + jobKey).update({ status: 'failed', error: e?.message || 'Unknown' });
+                } catch {}
+            } finally {
+                printQueueProcessing = false;
+            }
+        });
+        toast('🖨️ Printer mode active — listening for jobs');
+    }
+
+    function stopPrintQueueListener() {
+        if (printQueueListener && fbDb) {
+            fbDb.ref('printQueue').off('child_added', printQueueListener);
+            printQueueListener = null;
+        }
     }
 
     // ============================================================
@@ -2853,6 +3078,7 @@ function doGet(e) {
     // SETTINGS
     // ============================================================
     function showSettings() {
+        document.getElementById('setting-printer-mode').checked = isPrinterMode();
         document.getElementById('settings-overlay').classList.add('active');
     }
 
