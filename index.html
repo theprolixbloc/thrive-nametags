@@ -2202,57 +2202,134 @@ function doGet(e) {
         return { bitmap, bytesPerLine: bpl, width: w, height: h };
     }
 
-    // TSPL2 TEXT mode — sends text strings directly to the printer (~200 bytes, nearly instant)
-    function buildTSPL2TextCommand(chinese, english) {
+    // Fast print: English-only → TEXT command (instant), Chinese → bitmap for that region + TEXT for English
+    function buildFastPrintCommand(chinese, english) {
         const enc = new TextEncoder();
         const widthMM = (LABEL_W / 203 * 25.4).toFixed(1);
         const heightMM = (LABEL_H / 203 * 25.4).toFixed(1);
         const hasCN = !!chinese, hasEN = !!english;
 
-        let cmds =
+        // English-only: pure TEXT command, near-instant (~200 bytes)
+        if (!hasCN && hasEN) {
+            // Font "4" is 24w × 32h base. Adaptive multiplier based on name length.
+            let mult = 5;
+            while (english.length * 24 * mult > LABEL_W - 40 && mult > 1) mult--;
+            const charW = 24 * mult, charH = 32 * mult;
+            const x = Math.max(10, Math.floor((LABEL_W - english.length * charW) / 2));
+            const y = Math.floor(LABEL_H / 2 - charH / 2);
+            const cmds =
+                `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
+                `GAP 3 mm,0 mm\r\n` +
+                `DIRECTION 0,0\r\n` +
+                `DENSITY 10\r\n` +
+                `CLS\r\n` +
+                `TEXT ${x},${y},"4",0,${mult},${mult},"${english}"\r\n` +
+                `PRINT 1\r\nEND\r\n`;
+            console.log('[TSPL2-TEXT]', cmds.length, 'bytes, font 4 mult', mult);
+            return enc.encode(cmds);
+        }
+
+        // Has Chinese: render Chinese on offscreen canvas, send as cropped bitmap
+        const cnCanvas = document.createElement('canvas');
+        cnCanvas.width = LABEL_W;
+        cnCanvas.height = LABEL_H;
+        const ctx = cnCanvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, LABEL_W, LABEL_H);
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const margin = 30, maxW = LABEL_W - margin * 2;
+
+        // Position Chinese at same Y as renderLabel
+        const cnY = hasEN ? LABEL_H * 0.36 : LABEL_H / 2;
+        const maxSize = hasEN ? 140 : 180;
+        const cnS = fitText(ctx, chinese, maxW, maxSize, CHINESE_FONT, '700');
+        ctx.font = `700 ${cnS}px ${CHINESE_FONT}`;
+        ctx.fillText(chinese, LABEL_W / 2, cnY);
+
+        // Convert to monochrome bitmap
+        const bd = canvasToMonoBitmap(cnCanvas);
+        const inverted = new Uint8Array(bd.bitmap.length);
+        for (let i = 0; i < bd.bitmap.length; i++) inverted[i] = bd.bitmap[i] ^ 0xFF;
+
+        // Find vertical content ranges (non-white rows)
+        const ranges = [];
+        let rangeStart = -1;
+        for (let y = 0; y < bd.height; y++) {
+            const off = y * bd.bytesPerLine;
+            let hasContent = false;
+            for (let b = 0; b < bd.bytesPerLine; b++) {
+                if (inverted[off + b] !== 0x00) { hasContent = true; break; }
+            }
+            if (hasContent && rangeStart === -1) rangeStart = y;
+            else if (!hasContent && rangeStart !== -1) { ranges.push([rangeStart, y]); rangeStart = -1; }
+        }
+        if (rangeStart !== -1) ranges.push([rangeStart, bd.height]);
+        const merged = [];
+        for (const r of ranges) {
+            if (merged.length && r[0] - merged[merged.length - 1][1] < 8) merged[merged.length - 1][1] = r[1];
+            else merged.push([...r]);
+        }
+
+        // Find horizontal content bounds (leftmost/rightmost non-white byte)
+        let minByte = bd.bytesPerLine, maxByte = 0;
+        for (const [sY, eY] of merged) {
+            for (let y = sY; y < eY; y++) {
+                const off = y * bd.bytesPerLine;
+                for (let b = 0; b < bd.bytesPerLine; b++) {
+                    if (inverted[off + b] !== 0x00) { if (b < minByte) minByte = b; break; }
+                }
+                for (let b = bd.bytesPerLine - 1; b >= 0; b--) {
+                    if (inverted[off + b] !== 0x00) { if (b > maxByte) maxByte = b; break; }
+                }
+            }
+        }
+        const cropLeft = Math.max(0, minByte - 1);
+        const cropRight = Math.min(bd.bytesPerLine, maxByte + 2);
+        const cropW = cropRight - cropLeft;
+        const cropX = cropLeft * 8; // pixel offset
+
+        // Build TSPL2 command with cropped bitmap regions
+        const parts = [];
+        parts.push(enc.encode(
             `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
             `GAP 3 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
             `DENSITY 10\r\n` +
-            `CODEPAGE UTF-8\r\n` +
-            `CLS\r\n`;
+            `CLS\r\n`
+        ));
 
-        if (hasCN && hasEN) {
-            // Chinese: TST24.BF2 at 24×24 base, multiplied to ~120 dots tall
-            const cnMult = 5;
-            const cnCharW = 24 * cnMult;
-            const cnTotalW = chinese.length * cnCharW;
-            const cnX = Math.max(10, Math.floor((LABEL_W - cnTotalW) / 2));
-            const cnY = Math.floor(LABEL_H * 0.36 - (24 * cnMult) / 2);
-
-            // English: Font "4" (24×32 base), multiplied to ~64 dots tall
-            const enMult = 2;
-            const enCharW = 16 * enMult; // approximate avg width for proportional text
-            const enTotalW = english.length * enCharW;
-            const enX = Math.max(10, Math.floor((LABEL_W - enTotalW) / 2));
-            const enY = Math.floor(LABEL_H * 0.72 - (32 * enMult) / 2);
-
-            cmds += `TEXT ${cnX},${cnY},"TST24.BF2",0,${cnMult},${cnMult},"${chinese}"\r\n`;
-            cmds += `TEXT ${enX},${enY},"4",0,${enMult},${enMult},"${english}"\r\n`;
-        } else if (hasCN) {
-            const cnMult = 7;
-            const cnCharW = 24 * cnMult;
-            const cnTotalW = chinese.length * cnCharW;
-            const cnX = Math.max(10, Math.floor((LABEL_W - cnTotalW) / 2));
-            const cnY = Math.floor(LABEL_H / 2 - (24 * cnMult) / 2);
-            cmds += `TEXT ${cnX},${cnY},"TST24.BF2",0,${cnMult},${cnMult},"${chinese}"\r\n`;
-        } else if (hasEN) {
-            const enMult = 3;
-            const enCharW = 16 * enMult;
-            const enTotalW = english.length * enCharW;
-            const enX = Math.max(10, Math.floor((LABEL_W - enTotalW) / 2));
-            const enY = Math.floor(LABEL_H / 2 - (32 * enMult) / 2);
-            cmds += `TEXT ${enX},${enY},"4",0,${enMult},${enMult},"${english}"\r\n`;
+        for (const [startY, endY] of merged) {
+            const h = endY - startY;
+            parts.push(enc.encode(`BITMAP ${cropX},${startY},${cropW},${h},0,`));
+            // Extract only the cropped columns for each row
+            const regionData = new Uint8Array(cropW * h);
+            for (let y = 0; y < h; y++) {
+                const srcOff = (startY + y) * bd.bytesPerLine + cropLeft;
+                regionData.set(inverted.subarray(srcOff, srcOff + cropW), y * cropW);
+            }
+            parts.push(regionData);
         }
 
-        cmds += `PRINT 1\r\nEND\r\n`;
-        console.log('[TSPL2-TEXT]', cmds.length, 'bytes');
-        return enc.encode(cmds);
+        // Add English as TEXT command if present (much faster than bitmap)
+        if (hasEN) {
+            let mult = 3;
+            while (english.length * 24 * mult > LABEL_W - 40 && mult > 1) mult--;
+            const charW = 24 * mult, charH = 32 * mult;
+            const enX = Math.max(10, Math.floor((LABEL_W - english.length * charW) / 2));
+            const enYpos = Math.floor(LABEL_H * 0.72 - charH / 2);
+            parts.push(enc.encode(`TEXT ${enX},${enYpos},"4",0,${mult},${mult},"${english}"\r\n`));
+        }
+
+        parts.push(enc.encode(`PRINT 1\r\nEND\r\n`));
+        const totalLen = parts.reduce((s, p) => s + p.length, 0);
+        const cmd = new Uint8Array(totalLen);
+        let off = 0;
+        for (const p of parts) { cmd.set(p, off); off += p.length; }
+        const mode = hasEN ? 'hybrid' : 'bitmap-cn';
+        console.log(`[TSPL2-${mode}] ${totalLen} bytes (${merged.length} regions, ${cropW}/${bd.bytesPerLine} bytes/row)`);
+        return cmd;
     }
 
     // TSPL2 BITMAP mode — sends rendered image (slower but guaranteed correct)
@@ -2465,18 +2542,10 @@ function doGet(e) {
             const useBitmap = localStorage.getItem('thrive_print_mode') === 'bitmap';
 
             if (!useBitmap) {
-                // Fast path: TEXT commands (~200 bytes, <1 second)
-                try {
-                    await sendToPrinter(buildTSPL2TextCommand(cn, en));
-                } catch (e1) {
-                    console.warn('[BLE] TEXT mode failed, falling back to bitmap:', e1);
-                    st.textContent = 'Trying bitmap mode...';
-                    const canvas = document.getElementById('label-canvas');
-                    const bd = canvasToMonoBitmap(canvas);
-                    await sendToPrinter(buildTSPL2Command(bd));
-                }
+                // Fast path: TEXT for English-only, hybrid bitmap+TEXT for Chinese names
+                await sendToPrinter(buildFastPrintCommand(cn, en));
             } else {
-                // Bitmap path: rendered image (~10KB, ~5-10 seconds)
+                // Full bitmap path (fallback if fast mode has issues)
                 const canvas = document.getElementById('label-canvas');
                 const bd = canvasToMonoBitmap(canvas);
                 await sendToPrinter(buildTSPL2Command(bd));
@@ -2802,7 +2871,7 @@ function doGet(e) {
 
                     const useBitmap = localStorage.getItem('thrive_print_mode') === 'bitmap';
                     if (!useBitmap) {
-                        await sendToPrinter(buildTSPL2TextCommand(job.chinese || '', job.english || ''));
+                        await sendToPrinter(buildFastPrintCommand(job.chinese || '', job.english || ''));
                     } else {
                         const canvas = document.createElement('canvas');
                         canvas.width = LABEL_W;
