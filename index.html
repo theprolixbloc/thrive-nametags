@@ -1250,7 +1250,7 @@ function doGet(e) {
                 <div class="manage-add-form">
                     <input type="text" id="add-chinese" placeholder="Chinese name" autocomplete="off">
                     <input type="text" id="add-english" placeholder="English name" autocomplete="off">
-                    <input type="text" id="add-group" placeholder="Family group" autocomplete="off" style="max-width:110px;">
+                    <input type="text" id="add-group" placeholder="Groups" autocomplete="off" style="max-width:130px;" title="Comma-separated groups (e.g. Chen Family, Worship Team)">
                     <button class="btn btn-success" onclick="addNameToMaster()">+ Add</button>
                 </div>
             </div>
@@ -1358,6 +1358,21 @@ function doGet(e) {
         const checked = document.getElementById('kid-check').checked;
         setKid(selectedPerson.id, checked);
         renderGrid();
+    }
+
+    // Group helpers (supports multiple comma-separated groups)
+    function getGroups(p) {
+        return p.group ? p.group.split(',').map(g => g.trim()).filter(Boolean) : [];
+    }
+    function inGroup(p, groupName) {
+        return getGroups(p).includes(groupName);
+    }
+    function addGroup(p, groupName) {
+        const groups = getGroups(p);
+        if (!groups.includes(groupName)) {
+            groups.push(groupName);
+            p.group = groups.join(', ');
+        }
     }
 
     // BLE Printer State
@@ -1736,9 +1751,9 @@ function doGet(e) {
                 people.push({ chinese: s.chinese, english: s.english, service: s.service, group: s.group, id: key });
                 existing.add(key);
             } else if (s.group) {
-                // Update group on existing entry
+                // Append group to existing entry (supports multiple groups)
                 const p = people.find(p => p.id === key);
-                if (p && !p.group) p.group = s.group;
+                if (p) addGroup(p, s.group);
             }
         }
         // Re-sort
@@ -1756,7 +1771,7 @@ function doGet(e) {
             for (const [cn, en] of members) {
                 const key = `${cn}|${en}`.toLowerCase();
                 const p = people.find(p => p.id === key);
-                if (p) p.group = groupName;
+                if (p) addGroup(p, groupName);
             }
         }
     }
@@ -1909,16 +1924,16 @@ function doGet(e) {
             return true;
         });
 
-        // Family expansion: if searching and any match has a group, include all group members
+        // Group expansion: if searching and any match has a group, include all group members
         if (q && filtered.length > 0) {
             const matchedGroups = new Set();
             for (const p of filtered) {
-                if (p.group) matchedGroups.add(p.group);
+                for (const g of getGroups(p)) matchedGroups.add(g);
             }
             if (matchedGroups.size > 0) {
                 const filteredIds = new Set(filtered.map(p => p.id));
                 for (const p of people) {
-                    if (p.group && matchedGroups.has(p.group) && !filteredIds.has(p.id)) {
+                    if (p.group && getGroups(p).some(g => matchedGroups.has(g)) && !filteredIds.has(p.id)) {
                         if (statusFilter === 'active' && p.inactive) continue;
                         if (statusFilter === 'inactive' && !p.inactive) continue;
                         if (serviceFilter !== 'all' && p.service && p.service !== serviceFilter) continue;
@@ -2291,12 +2306,14 @@ function doGet(e) {
         const actions = document.getElementById('print-actions');
         let buttons = '';
 
-        // Family batch print button (BLE only)
-        const familyGroup = selectedPerson?.group;
-        if (familyGroup && BLE.connected) {
-            const familyMembers = people.filter(p => p.group === familyGroup);
-            if (familyMembers.length > 1) {
-                buttons += `<button class="btn btn-success" onclick="doBatchPrint('${esc(familyGroup)}')" id="btn-batch-print">Print Family (${familyMembers.length})</button>`;
+        // Group batch print buttons (BLE only) — one button per group
+        const personGroups = selectedPerson ? getGroups(selectedPerson) : [];
+        if (personGroups.length > 0 && BLE.connected) {
+            for (const grp of personGroups) {
+                const grpMembers = people.filter(p => inGroup(p, grp));
+                if (grpMembers.length > 1) {
+                    buttons += `<button class="btn btn-success" onclick="doBatchPrint('${esc(grp)}')" id="btn-batch-${esc(grp)}">Print ${esc(grp)} (${grpMembers.length})</button>`;
+                }
             }
         }
 
@@ -2435,13 +2452,13 @@ function doGet(e) {
     }
 
     // ============================================================
-    // BATCH PRINT (FAMILY)
+    // BATCH PRINT (GROUP)
     // ============================================================
     async function doBatchPrint(groupName) {
         if (!BLE.connected) { toast('Connect printer first'); return; }
 
-        const members = people.filter(p => p.group === groupName);
-        if (!members.length) { toast('No family members found'); return; }
+        const members = people.filter(p => inGroup(p, groupName));
+        if (!members.length) { toast('No group members found'); return; }
 
         const st = document.getElementById('print-status');
         const actions = document.getElementById('print-actions');
@@ -2449,7 +2466,7 @@ function doGet(e) {
 
         // Disable all buttons
         actions.querySelectorAll('button').forEach(b => { b.disabled = true; });
-        const batchBtn = document.getElementById('btn-batch-print');
+        const batchBtn = document.getElementById('btn-batch-' + groupName);
         if (batchBtn) { batchBtn.textContent = 'Printing...'; batchBtn.className = 'btn printing'; }
 
         let printed = 0;
@@ -2507,13 +2524,13 @@ function doGet(e) {
         // Done
         if (!failed) {
             st.className = 'print-status success';
-            st.textContent = `Printed ${printed} family tags!`;
+            st.textContent = `Printed ${printed} ${groupName} tags!`;
             if (batchBtn) { batchBtn.textContent = 'Done!'; batchBtn.className = 'btn btn-success'; }
             setTimeout(() => closeModalDirect('preview-overlay'), 1200);
         } else {
             st.textContent += ` (${printed} of ${members.length} printed)`;
             actions.querySelectorAll('button').forEach(b => { b.disabled = false; });
-            if (batchBtn) { batchBtn.textContent = `Retry Family (${members.length})`; batchBtn.className = 'btn btn-danger'; }
+            if (batchBtn) { batchBtn.textContent = `Retry ${groupName} (${members.length})`; batchBtn.className = 'btn btn-danger'; }
         }
 
         renderGrid();
@@ -3021,7 +3038,7 @@ function doGet(e) {
         el.innerHTML = `<div class="edit-form">
             <input type="text" id="edit-cn-${idx}" value="${escH(n.chinese)}" placeholder="Chinese name">
             <input type="text" id="edit-en-${idx}" value="${escH(n.english)}" placeholder="English name">
-            <input type="text" id="edit-grp-${idx}" value="${escH(n.group || '')}" placeholder="Family group (optional)">
+            <input type="text" id="edit-grp-${idx}" value="${escH(n.group || '')}" placeholder="Groups (comma-separated)">
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:4px 0;">
                 <input type="checkbox" id="edit-kid-${idx}" ${kid ? 'checked' : ''}> Kid
             </label>
