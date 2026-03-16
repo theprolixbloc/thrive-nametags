@@ -2203,8 +2203,9 @@ function doGet(e) {
             btn.textContent = 'Connected';
             btn.classList.add('connected');
 
-            // Process any pending print queue jobs now that BLE is ready
-            if (isPrinterMode()) setTimeout(processPendingQueue, 500);
+            // Auto-enable printer mode and process any pending queue jobs
+            if (!isPrinterMode()) setPrinterMode(true);
+            setTimeout(processPendingQueue, 500);
 
             device.addEventListener('gattserverdisconnected', () => {
                 BLE.connected = false;
@@ -2367,7 +2368,7 @@ function doGet(e) {
             for (const grp of personGroups) {
                 const grpMembers = people.filter(p => inGroup(p, grp));
                 if (grpMembers.length > 1) {
-                    if (isPrinterMode() && BLE.connected) {
+                    if (BLE.connected) {
                         buttons += `<button class="btn btn-success" onclick="doBatchPrint('${esc(grp)}')" id="btn-batch-${esc(grp)}">Print ${esc(grp)} (${grpMembers.length})</button>`;
                     } else if (fbDb) {
                         buttons += `<button class="btn btn-success" onclick="doQueueBatchPrint('${esc(grp)}')">Print ${esc(grp)} (${grpMembers.length})</button>`;
@@ -2376,22 +2377,17 @@ function doGet(e) {
             }
         }
 
-        if (isPrinterMode() && BLE.connected) {
-            // Printer device: direct BLE print
+        if (BLE.connected) {
+            // BLE connected: always print directly
             buttons += '<button class="btn btn-primary" onclick="doBLEPrint()" id="btn-ble-print">Print</button>';
             buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
             tip.style.display = 'none';
         } else if (fbDb) {
-            // Non-printer device (or printer not connected): send to print queue
+            // No BLE: send to print queue for another device to print
             buttons += '<button class="btn btn-primary" onclick="doQueuePrint()" id="btn-queue-print">🖨️ Print</button>';
             buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
             tip.style.display = 'block';
-            tip.innerHTML = BLE.connected ? 'Sending to printer device via cloud queue.' : 'Print job will be sent wirelessly to the printer device.';
-        } else if (BLE.connected) {
-            // Firebase unavailable but BLE connected: direct print
-            buttons += '<button class="btn btn-primary" onclick="doBLEPrint()" id="btn-ble-print">Print</button>';
-            buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
-            tip.style.display = 'none';
+            tip.innerHTML = 'Print job will be sent wirelessly to the printer device.';
         } else if (IS_IOS && !HAS_BLE) {
             buttons += '<button class="btn btn-primary" onclick="doShare()">Share to Nelko App</button>';
             buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
@@ -2740,7 +2736,6 @@ function doGet(e) {
     async function processPendingQueue() {
         // Debug: show why we might skip
         if (!fbDb) { queueDebug('⚠ No Firebase'); return; }
-        if (!isPrinterMode()) { queueDebug('⚠ Printer mode OFF'); return; }
         if (!BLE.connected) { queueDebug('⏳ Waiting for BLE connection...'); return; }
         if (printQueueProcessing) { queueDebug('⏳ Already processing...'); return; }
 
@@ -2761,7 +2756,7 @@ function doGet(e) {
             queueDebug(`Found ${jobs.length} pending job(s)`);
 
             for (const job of jobs) {
-                if (!BLE.connected || !isPrinterMode()) break;
+                if (!BLE.connected) break;
                 printQueueProcessing = true;
                 const name = job.english || job.chinese || 'Unknown';
 
