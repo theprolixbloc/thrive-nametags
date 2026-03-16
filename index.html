@@ -1875,6 +1875,14 @@ function doGet(e) {
             else if (svc.includes('Second') || svc.includes('第二') || svc === '2') service = '2';
 
             const key = `${cn}|${en}`.toLowerCase();
+            // Deduplicate: skip if we already have this person
+            const existing = result.find(r => r.id === key);
+            if (existing) {
+                // Merge group info from duplicate row
+                if (grp && !existing.group) existing.group = grp;
+                else if (grp && existing.group && !existing.group.includes(grp)) existing.group += ', ' + grp;
+                continue;
+            }
             result.push({ chinese: cn, english: en, service, group: grp, id: key });
         }
 
