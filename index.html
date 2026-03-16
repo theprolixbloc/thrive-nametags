@@ -2277,6 +2277,7 @@ function doGet(e) {
     }
 
     // TSPL2 protocol for Nelko PL70e and compatible printers
+    // Optimized: only sends non-white rows to minimize BLE transfer time
     function buildTSPL2Command(bd) {
         const { bitmap, bytesPerLine, width, height } = bd;
         const enc = new TextEncoder();
@@ -2285,24 +2286,61 @@ function doGet(e) {
         const inverted = new Uint8Array(bitmap.length);
         for (let i = 0; i < bitmap.length; i++) inverted[i] = bitmap[i] ^ 0xFF;
 
+        // Find non-white row ranges (after inversion, 0x00 = white in TSPL2)
+        const ranges = [];
+        let rangeStart = -1;
+        for (let y = 0; y < height; y++) {
+            const off = y * bytesPerLine;
+            let hasContent = false;
+            for (let b = 0; b < bytesPerLine; b++) {
+                if (inverted[off + b] !== 0x00) { hasContent = true; break; }
+            }
+            if (hasContent && rangeStart === -1) rangeStart = y;
+            else if (!hasContent && rangeStart !== -1) {
+                ranges.push([rangeStart, y]);
+                rangeStart = -1;
+            }
+        }
+        if (rangeStart !== -1) ranges.push([rangeStart, height]);
+
+        // Merge ranges that are close together (< 8 rows gap) to reduce BITMAP commands
+        const merged = [];
+        for (const r of ranges) {
+            if (merged.length && r[0] - merged[merged.length - 1][1] < 8) {
+                merged[merged.length - 1][1] = r[1];
+            } else {
+                merged.push([...r]);
+            }
+        }
+
         // Label dimensions in mm (203 DPI)
         const widthMM = (width / 203 * 25.4).toFixed(1);
         const heightMM = (height / 203 * 25.4).toFixed(1);
 
-        const setup = enc.encode(
+        // Build command: CLS clears to white, then BITMAP only for content rows
+        const parts = [];
+        parts.push(enc.encode(
             `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
             `GAP 3 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
             `DENSITY 10\r\n` +
-            `CLS\r\n` +
-            `BITMAP 0,0,${bytesPerLine},${height},0,`
-        );
-        const footer = enc.encode(`PRINT 1\r\nEND\r\n`);
+            `CLS\r\n`
+        ));
 
-        const cmd = new Uint8Array(setup.length + inverted.length + footer.length);
-        cmd.set(setup, 0);
-        cmd.set(inverted, setup.length);
-        cmd.set(footer, setup.length + inverted.length);
+        for (const [startY, endY] of merged) {
+            const h = endY - startY;
+            parts.push(enc.encode(`BITMAP 0,${startY},${bytesPerLine},${h},0,`));
+            parts.push(inverted.slice(startY * bytesPerLine, endY * bytesPerLine));
+        }
+
+        parts.push(enc.encode(`PRINT 1\r\nEND\r\n`));
+
+        // Concatenate all parts
+        const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
+        const cmd = new Uint8Array(totalLen);
+        let off = 0;
+        for (const p of parts) { cmd.set(p, off); off += p.length; }
+        console.log(`[TSPL2] ${totalLen} bytes (${merged.length} regions, saved ${Math.round((1 - totalLen / (bitmap.length + 200)) * 100)}%)`);
         return cmd;
     }
 
