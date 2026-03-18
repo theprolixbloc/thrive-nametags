@@ -1026,6 +1026,15 @@
                     <div class="hint">A default URL is built in. Only set this to override with a new deployment URL.</div>
                 </div>
                 <div class="setting-row">
+                    <label>Print Quality</label>
+                    <select id="setting-print-quality" style="padding:8px;border-radius:6px;border:1px solid #ddd;font-size:16px;">
+                        <option value="1">1F — Fast (lighter print, faster)</option>
+                        <option value="2">2F — Normal</option>
+                        <option value="3">3F — High Quality (darker, slower)</option>
+                    </select>
+                    <div class="hint">Lower quality = faster printing. 1F is recommended for name tags.</div>
+                </div>
+                <div class="setting-row">
                     <label>BLE Diagnostics</label>
                     <div id="ble-diagnostics" style="font-family:monospace;font-size:12px;background:#f5f5f5;padding:8px;border-radius:4px;color:#333;">Not connected</div>
                     <div class="hint">Shows BLE write mode and speed. writeNoResp = fast, writeWithResp = slow.</div>
@@ -2177,6 +2186,17 @@ function doGet(e) {
     // ============================================================
     // BLE PRINTING PIPELINE
     // ============================================================
+    // Print quality: 1F=fast/light, 2F=normal, 3F=high/dark
+    function getPrintQuality() {
+        const q = localStorage.getItem('thrive_print_quality') || '2';
+        // Returns { speed, density } for TSPL2 commands
+        switch (q) {
+            case '1': return { speed: 4, density: 6 };   // Fast, lighter
+            case '3': return { speed: 1, density: 14 };   // Slow, darker
+            default:  return { speed: 2, density: 10 };   // Normal
+        }
+    }
+
     function canvasToMonoBitmap(canvas) {
         const ctx = canvas.getContext('2d');
         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -2212,11 +2232,13 @@ function doGet(e) {
             const charW = 24 * mult, charH = 32 * mult;
             const x = Math.max(10, Math.floor((LABEL_W - english.length * charW) / 2));
             const y = Math.floor(LABEL_H / 2 - charH / 2);
+            const pq = getPrintQuality();
             const cmds =
                 `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
                 `GAP 3 mm,0 mm\r\n` +
                 `DIRECTION 0,0\r\n` +
-                `DENSITY 10\r\n` +
+                `SPEED ${pq.speed}\r\n` +
+                `DENSITY ${pq.density}\r\n` +
                 `CLS\r\n` +
                 `TEXT ${x},${y},"4",0,${mult},${mult},"${english}"\r\n` +
                 `PRINT 1\r\nEND\r\n`;
@@ -2286,19 +2308,20 @@ function doGet(e) {
         const cropX = cropLeft * 8; // pixel offset
 
         // Build TSPL2 command with cropped bitmap regions
+        const pq = getPrintQuality();
         const parts = [];
         parts.push(enc.encode(
             `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
             `GAP 3 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
-            `DENSITY 10\r\n` +
+            `SPEED ${pq.speed}\r\n` +
+            `DENSITY ${pq.density}\r\n` +
             `CLS\r\n`
         ));
 
         for (const [startY, endY] of merged) {
             const h = endY - startY;
             parts.push(enc.encode(`BITMAP ${cropX},${startY},${cropW},${h},0,`));
-            // Extract only the cropped columns for each row
             const regionData = new Uint8Array(cropW * h);
             for (let y = 0; y < h; y++) {
                 const srcOff = (startY + y) * bd.bytesPerLine + cropLeft;
@@ -2307,7 +2330,6 @@ function doGet(e) {
             parts.push(regionData);
         }
 
-        // Add English as TEXT command if present (much faster than bitmap)
         if (hasEN) {
             let mult = 3;
             while (english.length * 24 * mult > LABEL_W - 40 && mult > 1) mult--;
@@ -2387,12 +2409,14 @@ function doGet(e) {
         const heightMM = (height / 203 * 25.4).toFixed(1);
 
         // Build command: CLS clears to white, then cropped BITMAP for content only
+        const pq = getPrintQuality();
         const parts = [];
         parts.push(enc.encode(
             `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
             `GAP 3 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
-            `DENSITY 10\r\n` +
+            `SPEED ${pq.speed}\r\n` +
+            `DENSITY ${pq.density}\r\n` +
             `CLS\r\n`
         ));
 
@@ -3279,6 +3303,7 @@ function doGet(e) {
     // ============================================================
     function showSettings() {
         document.getElementById('setting-printer-mode').checked = isPrinterMode();
+        document.getElementById('setting-print-quality').value = localStorage.getItem('thrive_print_quality') || '2';
         // Show BLE diagnostics
         const diag = document.getElementById('ble-diagnostics');
         if (BLE.connected && BLE.writeChar) {
@@ -3297,10 +3322,12 @@ function doGet(e) {
         const url = document.getElementById('script-url').value.trim();
         const svc = document.getElementById('setting-service-uuid').value.trim();
         const devName = document.getElementById('setting-device-name').value.trim();
+        const quality = document.getElementById('setting-print-quality').value;
         if (url) localStorage.setItem('thrive_script_url', url);
         else localStorage.removeItem('thrive_script_url');
         if (svc) { BLE.config.serviceUuid = svc; localStorage.setItem('thrive_ble_config', JSON.stringify(BLE.config)); }
         if (devName !== getDeviceName()) { setDeviceName(devName); sendHeartbeat(); }
+        localStorage.setItem('thrive_print_quality', quality);
         closeModalDirect('settings-overlay');
         toast('Settings saved');
     }
