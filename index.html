@@ -1430,6 +1430,9 @@ function doGet(e) {
         if (toggle) toggle.checked = isPrinterMode();
     }
 
+    // Global print lock — prevents ANY concurrent sends to printer
+    let printLock = false;
+
     // BLE Printer State
     const BLE = {
         device: null,
@@ -2583,6 +2586,8 @@ function doGet(e) {
 
     async function doBLEPrint() {
         if (!BLE.connected) { toast('Connect printer first'); return; }
+        if (printLock) { console.warn('[BLE] Print already in progress, ignoring'); return; }
+        printLock = true;
 
         const btn = document.getElementById('btn-ble-print');
         const st = document.getElementById('print-status');
@@ -2621,6 +2626,9 @@ function doGet(e) {
             st.textContent = 'Print failed: ' + msg + '. Try Share instead.';
             if (btn) { btn.disabled = false; btn.textContent = 'Retry'; btn.className = 'btn btn-danger'; }
             console.error('[BLE] Print error:', e);
+        } finally {
+            // Release lock after a cooldown (prevents rapid re-trigger)
+            setTimeout(() => { printLock = false; }, 2000);
         }
     }
 
@@ -2899,11 +2907,12 @@ function doGet(e) {
     }
 
     async function processPendingQueue() {
-        if (!fbDb) { queueDebug('⚠ No Firebase'); return; }
-        if (!BLE.connected) { queueDebug('⏳ Waiting for BLE connection...'); return; }
-        if (printQueueProcessing) { return; } // Skip silently to avoid log spam
+        if (!fbDb) return;
+        if (!BLE.connected) return;
+        if (printQueueProcessing || printLock) return; // Respect global print lock too
 
         printQueueProcessing = true;
+        printLock = true;
         queueDebug('Checking for pending jobs...');
 
         try {
@@ -2913,11 +2922,21 @@ function doGet(e) {
                 return;
             }
 
+            const now = Date.now();
+            const MAX_AGE = 30 * 60 * 1000; // 30 minutes — auto-expire old jobs
             const jobs = [];
             snap.forEach(child => {
-                if (!printedJobKeys.has(child.key)) {
-                    jobs.push({ key: child.key, ...child.val() });
+                const job = child.val();
+                // Skip already-printed jobs
+                if (printedJobKeys.has(child.key)) return;
+                // Auto-remove stale jobs (older than 30 min)
+                if (job.timestamp && (now - job.timestamp) > MAX_AGE) {
+                    console.log('[Queue] Removing stale job:', child.key);
+                    fbDb.ref('printQueue/' + child.key).remove().catch(() => {});
+                    printedJobKeys.add(child.key);
+                    return;
                 }
+                jobs.push({ key: child.key, ...job });
             });
             jobs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
@@ -2979,6 +2998,7 @@ function doGet(e) {
             console.warn('processPendingQueue error:', e);
         } finally {
             printQueueProcessing = false;
+            setTimeout(() => { printLock = false; }, 2000);
         }
     }
 
