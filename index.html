@@ -1026,11 +1026,9 @@
                     <div class="hint">A default URL is built in. Only set this to override with a new deployment URL.</div>
                 </div>
                 <div class="setting-row">
-                    <label style="display:flex;align-items:center;gap:10px;">
-                        <input type="checkbox" id="setting-bitmap-mode" style="width:18px;height:18px;">
-                        Use Bitmap Print Mode (slower but exact)
-                    </label>
-                    <div class="hint">Default is fast text mode. Switch to bitmap if Chinese characters print incorrectly.</div>
+                    <label>BLE Diagnostics</label>
+                    <div id="ble-diagnostics" style="font-family:monospace;font-size:12px;background:#f5f5f5;padding:8px;border-radius:4px;color:#333;">Not connected</div>
+                    <div class="hint">Shows BLE write mode and speed. writeNoResp = fast, writeWithResp = slow.</div>
                 </div>
                 <div class="setting-row">
                     <label>Device Name</label>
@@ -2101,15 +2099,17 @@ function doGet(e) {
                         console.log(`[BLE]   Char ${c.uuid} [${props.join(', ')}]`);
 
                         if (c.properties.writeWithoutResponse || c.properties.write) {
-                            writeChar = c;
-                            BLE.config.serviceUuid = uuid;
-                            BLE.config.writeUuid = c.uuid;
-                            localStorage.setItem('thrive_ble_config', JSON.stringify(BLE.config));
-                            document.getElementById('setting-service-uuid').value = uuid;
-                            break;
+                            // Prefer writeWithoutResponse (50x faster than write-with-response)
+                            if (!writeChar || (c.properties.writeWithoutResponse && !writeChar.properties.writeWithoutResponse)) {
+                                writeChar = c;
+                                BLE.config.serviceUuid = uuid;
+                                BLE.config.writeUuid = c.uuid;
+                                localStorage.setItem('thrive_ble_config', JSON.stringify(BLE.config));
+                                document.getElementById('setting-service-uuid').value = uuid;
+                            }
                         }
                     }
-                    if (writeChar) break;
+                    if (writeChar?.properties.writeWithoutResponse) break; // Got the best type, stop searching
                 } catch (svcErr) {
                     // This UUID not available on the device, skip
                 }
@@ -2144,8 +2144,10 @@ function doGet(e) {
                 toast('Printer disconnected');
             });
 
-            toast('Printer connected! (' + (device.name || 'BLE') + ')');
-            console.log('[BLE] Ready. Service:', BLE.config.serviceUuid, 'Char:', BLE.config.writeUuid);
+            const noResp = writeChar.properties.writeWithoutResponse;
+            const writeMode = noResp ? 'writeNoResp (FAST)' : 'writeWithResp (slow)';
+            toast(`Printer connected! Mode: ${writeMode}`);
+            console.log(`[BLE] Ready. Mode: ${writeMode}, Service: ${BLE.config.serviceUuid}, Char: ${BLE.config.writeUuid}`);
 
         } catch (e) {
             dot.classList.remove('connecting');
@@ -2325,8 +2327,8 @@ function doGet(e) {
         return cmd;
     }
 
-    // TSPL2 BITMAP mode — sends rendered image (slower but guaranteed correct)
-    // Optimized: only sends non-white rows to minimize BLE transfer time
+    // TSPL2 BITMAP mode — sends rendered image with maximum cropping
+    // Optimized: skips white rows (vertical) AND white columns (horizontal)
     function buildTSPL2Command(bd) {
         const { bitmap, bytesPerLine, width, height } = bd;
         const enc = new TextEncoder();
@@ -2335,7 +2337,7 @@ function doGet(e) {
         const inverted = new Uint8Array(bitmap.length);
         for (let i = 0; i < bitmap.length; i++) inverted[i] = bitmap[i] ^ 0xFF;
 
-        // Find non-white row ranges (after inversion, 0x00 = white in TSPL2)
+        // Find non-white row ranges (vertical crop)
         const ranges = [];
         let rangeStart = -1;
         for (let y = 0; y < height; y++) {
@@ -2352,7 +2354,7 @@ function doGet(e) {
         }
         if (rangeStart !== -1) ranges.push([rangeStart, height]);
 
-        // Merge ranges that are close together (< 8 rows gap) to reduce BITMAP commands
+        // Merge ranges that are close together (< 8 rows gap)
         const merged = [];
         for (const r of ranges) {
             if (merged.length && r[0] - merged[merged.length - 1][1] < 8) {
@@ -2362,11 +2364,29 @@ function doGet(e) {
             }
         }
 
+        // Find horizontal content bounds (leftmost/rightmost non-white byte)
+        let minByte = bytesPerLine, maxByte = 0;
+        for (const [sY, eY] of merged) {
+            for (let y = sY; y < eY; y++) {
+                const off = y * bytesPerLine;
+                for (let b = 0; b < bytesPerLine; b++) {
+                    if (inverted[off + b] !== 0x00) { if (b < minByte) minByte = b; break; }
+                }
+                for (let b = bytesPerLine - 1; b >= 0; b--) {
+                    if (inverted[off + b] !== 0x00) { if (b > maxByte) maxByte = b; break; }
+                }
+            }
+        }
+        const cropLeft = Math.max(0, minByte - 1);   // 1 byte padding
+        const cropRight = Math.min(bytesPerLine, maxByte + 2);
+        const cropW = cropRight - cropLeft;
+        const cropX = cropLeft * 8; // pixel X offset
+
         // Label dimensions in mm (203 DPI)
         const widthMM = (width / 203 * 25.4).toFixed(1);
         const heightMM = (height / 203 * 25.4).toFixed(1);
 
-        // Build command: CLS clears to white, then BITMAP only for content rows
+        // Build command: CLS clears to white, then cropped BITMAP for content only
         const parts = [];
         parts.push(enc.encode(
             `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
@@ -2378,18 +2398,24 @@ function doGet(e) {
 
         for (const [startY, endY] of merged) {
             const h = endY - startY;
-            parts.push(enc.encode(`BITMAP 0,${startY},${bytesPerLine},${h},0,`));
-            parts.push(inverted.slice(startY * bytesPerLine, endY * bytesPerLine));
+            parts.push(enc.encode(`BITMAP ${cropX},${startY},${cropW},${h},0,`));
+            // Extract only the cropped columns for each row
+            const regionData = new Uint8Array(cropW * h);
+            for (let y = 0; y < h; y++) {
+                const srcOff = (startY + y) * bytesPerLine + cropLeft;
+                regionData.set(inverted.subarray(srcOff, srcOff + cropW), y * cropW);
+            }
+            parts.push(regionData);
         }
 
         parts.push(enc.encode(`PRINT 1\r\nEND\r\n`));
 
-        // Concatenate all parts
         const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
         const cmd = new Uint8Array(totalLen);
         let off = 0;
         for (const p of parts) { cmd.set(p, off); off += p.length; }
-        console.log(`[TSPL2] ${totalLen} bytes (${merged.length} regions, saved ${Math.round((1 - totalLen / (bitmap.length + 200)) * 100)}%)`);
+        const rawSize = bitmap.length + 200;
+        console.log(`[TSPL2] ${totalLen} bytes (${merged.length} regions, ${cropW}/${bytesPerLine} cols, saved ${Math.round((1 - totalLen / rawSize) * 100)}%)`);
         return cmd;
     }
 
@@ -2413,26 +2439,30 @@ function doGet(e) {
         if (!BLE.writeChar) throw new Error('Printer not connected');
         const noResp = BLE.writeChar.properties.writeWithoutResponse;
         const CHUNK = noResp ? 512 : 200;
-        const DELAY = noResp ? 3 : 15;
 
-        async function writeChunk(chunk) {
+        const t0 = performance.now();
+        let chunks = 0;
+
+        // Flatten to single Uint8Array if needed
+        let buf = data;
+        if (Array.isArray(data)) {
+            const total = data.reduce((s, p) => s + p.length, 0);
+            buf = new Uint8Array(total);
+            let off = 0;
+            for (const p of data) { buf.set(p, off); off += p.length; }
+        }
+
+        for (let off = 0; off < buf.length; off += CHUNK) {
+            const chunk = buf.subarray(off, Math.min(off + CHUNK, buf.length));
             if (noResp) await BLE.writeChar.writeValueWithoutResponse(chunk);
             else await BLE.writeChar.writeValue(chunk);
+            chunks++;
+            // No explicit delay — the await provides natural backpressure
         }
 
-        if (data instanceof Uint8Array) {
-            for (let off = 0; off < data.length; off += CHUNK) {
-                await writeChunk(data.slice(off, Math.min(off + CHUNK, data.length)));
-                if (off + CHUNK < data.length) await sleep(DELAY);
-            }
-        } else if (Array.isArray(data)) {
-            for (const part of data) {
-                for (let off = 0; off < part.length; off += CHUNK) {
-                    await writeChunk(part.slice(off, Math.min(off + CHUNK, part.length)));
-                    await sleep(DELAY);
-                }
-            }
-        }
+        const elapsed = performance.now() - t0;
+        const kbps = (buf.length / 1024 / (elapsed / 1000)).toFixed(1);
+        console.log(`[BLE] ${buf.length} bytes, ${elapsed.toFixed(0)}ms, ${chunks} chunks, ${kbps} KB/s, ${noResp ? 'writeNoResp' : 'writeWithResp'}`);
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -2532,20 +2562,21 @@ function doGet(e) {
         try {
             const cn = selectedPerson?.chinese || '';
             const en = selectedPerson?.english || '';
-            const useBitmap = localStorage.getItem('thrive_print_mode') === 'bitmap';
+            const printT0 = performance.now();
 
-            if (!useBitmap) {
-                // Fast path: TEXT for English-only, hybrid bitmap+TEXT for Chinese names
-                await sendToPrinter(buildFastPrintCommand(cn, en));
+            // English-only names: use TEXT command (instant, ~200 bytes)
+            // Names with Chinese: use bitmap with max cropping (best quality)
+            if (!cn && en) {
+                await sendToPrinter(buildFastPrintCommand('', en));
             } else {
-                // Full bitmap path (fallback if fast mode has issues)
                 const canvas = document.getElementById('label-canvas');
                 const bd = canvasToMonoBitmap(canvas);
                 await sendToPrinter(buildTSPL2Command(bd));
             }
 
+            const printMs = Math.round(performance.now() - printT0);
             st.className = 'print-status success';
-            st.textContent = 'Printed!';
+            st.textContent = `Printed! (${(printMs / 1000).toFixed(1)}s)`;
             if (btn) { btn.textContent = 'Done!'; btn.className = 'btn btn-success'; }
 
             logAttendance();
@@ -2862,14 +2893,14 @@ function doGet(e) {
                     queueDebug(`🖨️ Printing: ${name}...`);
                     toast(`🖨️ Printing: ${name}...`);
 
-                    const useBitmap = localStorage.getItem('thrive_print_mode') === 'bitmap';
-                    if (!useBitmap) {
-                        await sendToPrinter(buildFastPrintCommand(job.chinese || '', job.english || ''));
+                    const cn = job.chinese || '', en = job.english || '';
+                    if (!cn && en) {
+                        await sendToPrinter(buildFastPrintCommand('', en));
                     } else {
                         const canvas = document.createElement('canvas');
                         canvas.width = LABEL_W;
                         canvas.height = LABEL_H;
-                        renderLabel(job.chinese, job.english, canvas);
+                        renderLabel(cn, en, canvas);
                         const bd = canvasToMonoBitmap(canvas);
                         await sendToPrinter(buildTSPL2Command(bd));
                     }
@@ -3227,7 +3258,17 @@ function doGet(e) {
     // ============================================================
     function showSettings() {
         document.getElementById('setting-printer-mode').checked = isPrinterMode();
-        document.getElementById('setting-bitmap-mode').checked = localStorage.getItem('thrive_print_mode') === 'bitmap';
+        // Show BLE diagnostics
+        const diag = document.getElementById('ble-diagnostics');
+        if (BLE.connected && BLE.writeChar) {
+            const noResp = BLE.writeChar.properties.writeWithoutResponse;
+            const mode = noResp ? 'writeNoResp (FAST)' : 'writeWithResp (slow)';
+            diag.textContent = `Connected | Mode: ${mode} | Service: ${BLE.config.serviceUuid?.slice(0,8)}... | Char: ${BLE.config.writeUuid?.slice(0,8)}...`;
+            diag.style.color = noResp ? '#16a34a' : '#dc2626';
+        } else {
+            diag.textContent = 'Not connected';
+            diag.style.color = '#333';
+        }
         document.getElementById('settings-overlay').classList.add('active');
     }
 
@@ -3235,12 +3276,10 @@ function doGet(e) {
         const url = document.getElementById('script-url').value.trim();
         const svc = document.getElementById('setting-service-uuid').value.trim();
         const devName = document.getElementById('setting-device-name').value.trim();
-        const bitmapMode = document.getElementById('setting-bitmap-mode').checked;
         if (url) localStorage.setItem('thrive_script_url', url);
         else localStorage.removeItem('thrive_script_url');
         if (svc) { BLE.config.serviceUuid = svc; localStorage.setItem('thrive_ble_config', JSON.stringify(BLE.config)); }
         if (devName !== getDeviceName()) { setDeviceName(devName); sendHeartbeat(); }
-        localStorage.setItem('thrive_print_mode', bitmapMode ? 'bitmap' : 'text');
         closeModalDirect('settings-overlay');
         toast('Settings saved');
     }
