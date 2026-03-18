@@ -3070,14 +3070,19 @@ function doGet(e) {
         queueDebug('Starting queue polling...');
         printedJobKeys.clear();
 
-        // Use value listener for real-time notifications (debounced via printLock)
+        // Use value listener for real-time notifications, debounced to prevent rapid re-fires
+        let queueDebounceTimer = null;
         const ref = fbDb.ref('printQueue').orderByChild('status').equalTo('pending');
         printQueueListener = ref.on('value', (snap) => {
             if (!snap.exists()) return;
-            // Only trigger if not already processing
-            if (!printQueueProcessing && !printLock && BLE.connected) {
-                processPendingQueue();
-            }
+            if (printQueueProcessing || printLock || !BLE.connected) return;
+            // Debounce: wait 1s after last change before processing
+            clearTimeout(queueDebounceTimer);
+            queueDebounceTimer = setTimeout(() => {
+                if (!printQueueProcessing && !printLock && BLE.connected) {
+                    processPendingQueue();
+                }
+            }, 1000);
         });
 
         // Poll every 10 seconds as a safety net
@@ -3136,6 +3141,17 @@ function doGet(e) {
 
                 const name = job.english || job.chinese || 'Unknown';
 
+                // REMOVE from Firebase FIRST — before printing — so the value listener
+                // never sees this job again and can't trigger a duplicate print
+                try {
+                    await fbDb.ref('printQueue/' + job.key).remove();
+                } catch (removeErr) {
+                    console.warn('[Queue] Remove failed, marking as failed:', removeErr);
+                    try {
+                        await fbDb.ref('printQueue/' + job.key + '/status').set('failed');
+                    } catch {}
+                }
+
                 try {
                     queueDebug(`🖨️ Printing: ${name}...`);
                     toast(`🖨️ Printing: ${name}...`);
@@ -3152,16 +3168,6 @@ function doGet(e) {
                         await sendToPrinter(buildTSPL2Command(bd));
                     }
 
-                    // Remove from queue — try remove first, then set status to 'failed' as fallback
-                    try {
-                        await fbDb.ref('printQueue/' + job.key).remove();
-                    } catch (removeErr) {
-                        console.warn('[Queue] Remove failed, marking as failed:', removeErr);
-                        try {
-                            // Note: only set allowed fields (no extra 'error' field which security rules reject)
-                            await fbDb.ref('printQueue/' + job.key + '/status').set('failed');
-                        } catch {}
-                    }
                     queueDebug(`✓ Printed: ${name}`);
                     toast(`✓ Printed: ${name}`);
 
@@ -3169,9 +3175,6 @@ function doGet(e) {
                 } catch (e) {
                     queueDebug(`✗ Failed: ${name} — ${e?.message}`);
                     toast(`Print failed: ${name}`);
-                    try {
-                        await fbDb.ref('printQueue/' + job.key + '/status').set('failed');
-                    } catch {}
                 }
             }
             queueDebug('✓ Queue empty — ready for jobs');
