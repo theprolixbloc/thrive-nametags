@@ -919,6 +919,7 @@
                 <span class="printer-name" id="printerName">No printer</span>
             </div>
             <button class="connect-btn" id="connectBtn" onclick="connectPrinter()">Connect Printer</button>
+            <button class="connect-btn" id="disconnectBtn" onclick="disconnectPrinter()" style="display:none;background:#ef4444;padding:8px 12px;font-size:13px;">Disconnect</button>
         </div>
         <div class="ble-note" id="bleNote"></div>
 
@@ -1679,6 +1680,27 @@ function doGet(e) {
                 _initDone = false;
             }
         }, 300000);
+
+        // Show active printers from Firebase (helps new devices know what to connect to)
+        checkActivePrinters();
+    }
+
+    function checkActivePrinters() {
+        if (!fbDb || BLE.connected) return;
+        fbDb.ref('printers').once('value', snap => {
+            if (!snap.exists()) return;
+            const printers = snap.val();
+            const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+            const names = Object.values(printers)
+                .filter(p => p.status === 'connected' && p.connectedAt > twoHoursAgo)
+                .map(p => p.printerName)
+                .filter((v, i, a) => a.indexOf(v) === i); // unique
+            if (names.length > 0 && !BLE.connected) {
+                const note = document.getElementById('bleNote');
+                note.innerHTML = `<b>Available printer${names.length > 1 ? 's' : ''}:</b> ${names.join(', ')}. Tap <b>Connect Printer</b> and select it from the list.`;
+                note.classList.add('visible');
+            }
+        });
     }
 
     function setupPlatform() {
@@ -2165,12 +2187,14 @@ function doGet(e) {
             BLE.writeChar = writeChar;
             BLE.connected = true;
             reconnectAttempts = 0;
+            intentionalDisconnect = false;
 
             dot.classList.remove('connecting');
             dot.classList.add('connected');
             document.getElementById('printerName').textContent = device.name || 'Printer';
             btn.textContent = 'Connected';
             btn.classList.add('connected');
+            showDisconnectBtn(true);
 
             // Auto-enable printer mode: this device has BLE, so it's the printer
             if (!isPrinterMode()) setPrinterMode(true);
@@ -2179,13 +2203,14 @@ function doGet(e) {
             device.addEventListener('gattserverdisconnected', () => {
                 BLE.connected = false;
                 BLE.writeChar = null;
+                showDisconnectBtn(false);
+                if (intentionalDisconnect) return; // User tapped Disconnect — don't auto-reconnect
                 dot.classList.remove('connected');
                 dot.classList.add('connecting');
                 document.getElementById('printerName').textContent = 'Reconnecting...';
                 btn.textContent = 'Reconnecting...';
                 btn.classList.remove('connected');
                 toast('Printer disconnected — auto-reconnecting...');
-                // Auto-reconnect after a brief delay
                 setTimeout(() => autoReconnectBLE(), 2000);
             });
 
@@ -2193,6 +2218,9 @@ function doGet(e) {
             const writeMode = noResp ? 'writeNoResp (FAST)' : 'writeWithResp (slow)';
             toast(`Printer connected! Mode: ${writeMode}`);
             console.log(`[BLE] Ready. Mode: ${writeMode}, Service: ${BLE.config.serviceUuid}, Char: ${BLE.config.writeUuid}`);
+
+            // Register printer in Firebase so other devices can see it
+            registerPrinterInFirebase(device.name || 'Unknown Printer');
 
         } catch (e) {
             dot.classList.remove('connecting');
@@ -2219,12 +2247,62 @@ function doGet(e) {
         }
     }
 
+    // ── Printer Registry (Firebase) ──
+    // When a device connects to a BLE printer, register it so other devices
+    // can see which printers are in use and by whom.
+    function registerPrinterInFirebase(printerName) {
+        if (!fbDb) return;
+        const deviceId = getDeviceId();
+        fbDb.ref('printers/' + deviceId).set({
+            printerName: printerName,
+            deviceId: deviceId,
+            deviceName: getDeviceName(),
+            connectedAt: new Date().toISOString(),
+            status: 'connected'
+        }).catch(() => {});
+    }
+
+    function unregisterPrinterInFirebase() {
+        if (!fbDb) return;
+        const deviceId = getDeviceId();
+        fbDb.ref('printers/' + deviceId).remove().catch(() => {});
+    }
+
+    // Intentional disconnect — clean up and suppress auto-reconnect
+    let intentionalDisconnect = false;
+
+    function disconnectPrinter() {
+        intentionalDisconnect = true;
+        reconnectAttempts = MAX_RECONNECT_ATTEMPTS; // Prevent auto-reconnect
+        unregisterPrinterInFirebase();
+        if (BLE.device?.gatt?.connected) {
+            BLE.device.gatt.disconnect();
+        }
+        BLE.connected = false;
+        BLE.writeChar = null;
+        BLE.device = null;
+        if (isPrinterMode()) setPrinterMode(false);
+
+        const dot = document.getElementById('printerDot');
+        const btn = document.getElementById('connectBtn');
+        dot.classList.remove('connected', 'connecting');
+        document.getElementById('printerName').textContent = 'No printer';
+        btn.textContent = 'Connect Printer';
+        btn.classList.remove('connected');
+        document.getElementById('disconnectBtn').style.display = 'none';
+        toast('Printer disconnected');
+    }
+
+    function showDisconnectBtn(show) {
+        document.getElementById('disconnectBtn').style.display = show ? 'inline-block' : 'none';
+    }
+
     // Auto-reconnect to a previously connected printer (no user gesture needed)
     let reconnectAttempts = 0;
     const MAX_RECONNECT_ATTEMPTS = 5;
 
     async function autoReconnectBLE() {
-        if (!BLE.device || BLE.connected) return;
+        if (intentionalDisconnect || !BLE.device || BLE.connected) return;
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
             const btn = document.getElementById('connectBtn');
             const dot = document.getElementById('printerDot');
@@ -2233,6 +2311,7 @@ function doGet(e) {
             toast(`Auto-reconnect failed after ${MAX_RECONNECT_ATTEMPTS} attempts. Tap Reconnect to try manually.`);
             reconnectAttempts = 0;
             if (isPrinterMode()) setPrinterMode(false);
+            showDisconnectBtn(false);
             return;
         }
 
@@ -2270,6 +2349,7 @@ function doGet(e) {
             btn.classList.add('connected');
 
             if (!isPrinterMode()) setPrinterMode(true);
+            showDisconnectBtn(true);
             setTimeout(processPendingQueue, 500);
 
             const noResp = writeChar.properties.writeWithoutResponse;
