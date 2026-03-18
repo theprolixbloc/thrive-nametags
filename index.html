@@ -2640,21 +2640,40 @@ function doGet(e) {
         return cmd;
     }
 
+    // Debug log visible on screen (temporary — remove after fixing repeat print bug)
+    let _printDebugLines = [];
+    function printDebug(msg) {
+        const ts = new Date().toLocaleTimeString('en-US', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        const line = `[${ts}] ${msg}`;
+        console.log('[PRINT-DEBUG]', msg);
+        _printDebugLines.push(line);
+        if (_printDebugLines.length > 15) _printDebugLines.shift();
+        let el = document.getElementById('print-debug-log');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'print-debug-log';
+            el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.9);color:#0f0;font:11px/1.4 monospace;padding:8px;z-index:9999;white-space:pre-wrap;';
+            document.body.appendChild(el);
+        }
+        el.textContent = _printDebugLines.join('\n');
+        el.scrollTop = el.scrollHeight;
+    }
+
     async function sendToPrinter(data) {
         if (!BLE.writeChar) throw new Error('Printer not connected');
 
-        // Duplicate detection: block identical data sent within 5 seconds
+        // Duplicate detection: block identical data sent within 10 seconds
         const now = Date.now();
         const hash = data.length + '-' + (data[0] || 0) + '-' + (data[100] || 0) + '-' + (data[data.length - 1] || 0);
-        if (hash === lastPrintHash && (now - lastPrintTime) < 5000) {
-            console.warn('[BLE] Blocked duplicate print within 5s');
+        if (hash === lastPrintHash && (now - lastPrintTime) < 10000) {
+            printDebug(`⛔ BLOCKED duplicate (same data within ${Math.round((now - lastPrintTime)/1000)}s)`);
             return;
         }
         lastPrintHash = hash;
         lastPrintTime = now;
 
         const caller = new Error().stack?.split('\n')[2]?.trim() || 'unknown';
-        console.log(`[BLE] sendToPrinter called from: ${caller}`);
+        printDebug(`📤 sendToPrinter (${data.length || data.reduce?.((s,p)=>s+p.length,0)} bytes) from: ${caller.slice(-60)}`);
 
         const noResp = BLE.writeChar.properties.writeWithoutResponse;
         const CHUNK = noResp ? 512 : 200;
@@ -2769,9 +2788,11 @@ function doGet(e) {
     }
 
     async function doBLEPrint() {
-        if (!BLE.connected) { toast('Connect printer first'); return; }
-        if (printLock) { console.warn('[BLE] Print already in progress, ignoring'); return; }
+        printDebug('▶ doBLEPrint() called');
+        if (!BLE.connected) { toast('Connect printer first'); printDebug('  ⛔ not connected'); return; }
+        if (printLock) { printDebug('  ⛔ printLock=true, ignoring'); return; }
         printLock = true;
+        printDebug('  🔒 printLock=true');
 
         const btn = document.getElementById('btn-ble-print');
         const st = document.getElementById('print-status');
@@ -2809,9 +2830,10 @@ function doGet(e) {
             st.className = 'print-status error';
             st.textContent = 'Print failed: ' + msg + '. Try Share instead.';
             if (btn) { btn.disabled = false; btn.textContent = 'Retry'; btn.className = 'btn btn-danger'; }
-            console.error('[BLE] Print error:', e);
+            printDebug(`  ❌ doBLEPrint error: ${msg}`);
         } finally {
             printLock = false;
+            printDebug('  🔓 printLock=false (doBLEPrint done)');
         }
     }
 
@@ -3074,11 +3096,16 @@ function doGet(e) {
         let queueDebounceTimer = null;
         const ref = fbDb.ref('printQueue').orderByChild('status').equalTo('pending');
         printQueueListener = ref.on('value', (snap) => {
+            const count = snap.exists() ? snap.numChildren() : 0;
+            printDebug(`🔔 value listener fired (${count} pending jobs)`);
             if (!snap.exists()) return;
-            if (printQueueProcessing || printLock || !BLE.connected) return;
-            // Debounce: wait 1s after last change before processing
+            if (printQueueProcessing || printLock || !BLE.connected) {
+                printDebug(`  ⏸ skipped (processing=${printQueueProcessing}, lock=${printLock}, ble=${BLE.connected})`);
+                return;
+            }
             clearTimeout(queueDebounceTimer);
             queueDebounceTimer = setTimeout(() => {
+                printDebug('  ⏰ debounce timer fired, calling processPendingQueue');
                 if (!printQueueProcessing && !printLock && BLE.connected) {
                     processPendingQueue();
                 }
@@ -3086,7 +3113,10 @@ function doGet(e) {
         });
 
         // Poll every 10 seconds as a safety net
-        pendingQueueInterval = setInterval(processPendingQueue, 10000);
+        pendingQueueInterval = setInterval(() => {
+            printDebug('⏰ 10s poll interval');
+            processPendingQueue();
+        }, 10000);
 
         // Process any existing pending jobs once now
         processPendingQueue();
@@ -3096,10 +3126,11 @@ function doGet(e) {
     async function processPendingQueue() {
         if (!fbDb) return;
         if (!BLE.connected) return;
-        if (printQueueProcessing || printLock) return; // Respect global print lock too
+        if (printQueueProcessing || printLock) { printDebug(`⏸ processPendingQueue skipped (processing=${printQueueProcessing}, lock=${printLock})`); return; }
 
         printQueueProcessing = true;
         printLock = true;
+        printDebug('▶ processPendingQueue() started');
         queueDebug('Checking for pending jobs...');
 
         try {
@@ -3180,10 +3211,11 @@ function doGet(e) {
             queueDebug('✓ Queue empty — ready for jobs');
         } catch (e) {
             queueDebug(`✗ Error: ${e?.message}`);
-            console.warn('processPendingQueue error:', e);
+            printDebug(`❌ processPendingQueue error: ${e?.message}`);
         } finally {
             printQueueProcessing = false;
             printLock = false;
+            printDebug('🔓 processPendingQueue done, locks released');
         }
     }
 
