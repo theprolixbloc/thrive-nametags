@@ -1018,7 +1018,7 @@
                         <input type="checkbox" id="setting-printer-mode" onchange="setPrinterMode(this.checked)" style="width:20px;height:20px;">
                         🖨️ Printer Mode
                     </label>
-                    <div class="hint">Multi-device only: Turn ON for the device connected to the Nelko printer. It will receive and print jobs from other devices. Leave OFF for single-device use.</div>
+                    <div class="hint">Auto-enabled when printer is connected. Receives and prints jobs from other devices wirelessly.</div>
                 </div>
                 <div class="setting-row">
                     <label>Google Apps Script URL (override)</label>
@@ -1630,14 +1630,8 @@ function doGet(e) {
         document.getElementById('setting-device-name').value = getDeviceName();
         updatePrinterModeUI();
 
-        // One-time reset: printer mode was previously auto-enabled on BLE connect.
-        // Reset it so queue doesn't auto-start. Users must enable in Settings for multi-device.
-        if (!localStorage.getItem('thrive_printer_mode_v2')) {
-            localStorage.setItem('thrive_printer_mode', 'false');
-            localStorage.setItem('thrive_printer_mode_v2', 'migrated');
-        }
-
-        // Start print queue listener if explicitly in printer mode
+        // Start print queue listener if printer mode was left on (BLE will auto-enable it)
+        // Note: printer mode auto-enables when BLE connects, auto-disables when BLE disconnects
         if (isPrinterMode()) startPrintQueueListener();
 
         // Audit + heartbeat
@@ -2149,14 +2143,14 @@ function doGet(e) {
             btn.textContent = 'Connected';
             btn.classList.add('connected');
 
-            // If already in printer mode (explicitly enabled), start processing queue
-            if (isPrinterMode()) {
-                setTimeout(processPendingQueue, 500);
-            }
+            // Auto-enable printer mode: this device has BLE, so it's the printer
+            if (!isPrinterMode()) setPrinterMode(true);
+            setTimeout(processPendingQueue, 500);
 
             device.addEventListener('gattserverdisconnected', () => {
                 BLE.connected = false;
                 BLE.writeChar = null;
+                if (isPrinterMode()) setPrinterMode(false);
                 dot.classList.remove('connected');
                 document.getElementById('printerName').textContent = 'Disconnected';
                 btn.textContent = 'Reconnect';
@@ -2627,8 +2621,7 @@ function doGet(e) {
             if (btn) { btn.disabled = false; btn.textContent = 'Retry'; btn.className = 'btn btn-danger'; }
             console.error('[BLE] Print error:', e);
         } finally {
-            // Release lock after a cooldown (prevents rapid re-trigger)
-            setTimeout(() => { printLock = false; }, 2000);
+            printLock = false;
         }
     }
 
@@ -2998,7 +2991,7 @@ function doGet(e) {
             console.warn('processPendingQueue error:', e);
         } finally {
             printQueueProcessing = false;
-            setTimeout(() => { printLock = false; }, 2000);
+            printLock = false;
         }
     }
 
