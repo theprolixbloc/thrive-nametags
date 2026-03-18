@@ -1432,6 +1432,8 @@ function doGet(e) {
 
     // Global print lock — prevents ANY concurrent sends to printer
     let printLock = false;
+    let lastPrintHash = '';
+    let lastPrintTime = 0;
 
     // BLE Printer State
     const BLE = {
@@ -2272,7 +2274,7 @@ function doGet(e) {
                 `DENSITY ${pq.density}\r\n` +
                 `CLS\r\n` +
                 `TEXT ${x},${y},"4",0,${mult},${mult},"${english}"\r\n` +
-                `PRINT 1\r\nEND\r\n`;
+                `PRINT 1\r\n`;
             console.log('[TSPL2-TEXT]', cmds.length, 'bytes, font 4 mult', mult);
             return enc.encode(cmds);
         }
@@ -2370,7 +2372,7 @@ function doGet(e) {
             parts.push(enc.encode(`TEXT ${enX},${enYpos},"4",0,${mult},${mult},"${english}"\r\n`));
         }
 
-        parts.push(enc.encode(`PRINT 1\r\nEND\r\n`));
+        parts.push(enc.encode(`PRINT 1\r\n`));
         const totalLen = parts.reduce((s, p) => s + p.length, 0);
         const cmd = new Uint8Array(totalLen);
         let off = 0;
@@ -2463,7 +2465,7 @@ function doGet(e) {
             parts.push(regionData);
         }
 
-        parts.push(enc.encode(`PRINT 1\r\nEND\r\n`));
+        parts.push(enc.encode(`PRINT 1\r\n`));
 
         const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
         const cmd = new Uint8Array(totalLen);
@@ -2492,6 +2494,20 @@ function doGet(e) {
 
     async function sendToPrinter(data) {
         if (!BLE.writeChar) throw new Error('Printer not connected');
+
+        // Duplicate detection: block identical data sent within 5 seconds
+        const now = Date.now();
+        const hash = data.length + '-' + (data[0] || 0) + '-' + (data[100] || 0) + '-' + (data[data.length - 1] || 0);
+        if (hash === lastPrintHash && (now - lastPrintTime) < 5000) {
+            console.warn('[BLE] Blocked duplicate print within 5s');
+            return;
+        }
+        lastPrintHash = hash;
+        lastPrintTime = now;
+
+        const caller = new Error().stack?.split('\n')[2]?.trim() || 'unknown';
+        console.log(`[BLE] sendToPrinter called from: ${caller}`);
+
         const noResp = BLE.writeChar.properties.writeWithoutResponse;
         const CHUNK = noResp ? 512 : 200;
 
@@ -2901,26 +2917,25 @@ function doGet(e) {
 
     function startPrintQueueListener() {
         if (!fbDb) { queueDebug('⚠ Firebase not available'); return; }
-        if (printQueueListener) { queueDebug('Listener already active'); return; }
+        if (pendingQueueInterval) { queueDebug('Listener already active'); return; }
 
-        queueDebug('Starting listener...');
+        queueDebug('Starting queue polling...');
         printedJobKeys.clear();
 
-        // Listen for new jobs in real-time — triggers processPendingQueue
+        // Use value listener for real-time notifications (debounced via printLock)
         const ref = fbDb.ref('printQueue').orderByChild('status').equalTo('pending');
-        printQueueListener = ref.on('child_added', (snap) => {
-            if (printedJobKeys.has(snap.key)) return; // Already handled
-            const job = snap.val();
-            queueDebug(`New job received: ${job?.english || job?.chinese || '?'}`);
-            processPendingQueue();
+        printQueueListener = ref.on('value', (snap) => {
+            if (!snap.exists()) return;
+            // Only trigger if not already processing
+            if (!printQueueProcessing && !printLock && BLE.connected) {
+                processPendingQueue();
+            }
         });
 
         // Poll every 10 seconds as a safety net
-        if (!pendingQueueInterval) {
-            pendingQueueInterval = setInterval(processPendingQueue, 10000);
-        }
+        pendingQueueInterval = setInterval(processPendingQueue, 10000);
 
-        // Process any existing pending jobs right now
+        // Process any existing pending jobs once now
         processPendingQueue();
         toast('🖨️ Printer mode active — listening for jobs');
     }
@@ -3023,7 +3038,7 @@ function doGet(e) {
 
     function stopPrintQueueListener() {
         if (printQueueListener && fbDb) {
-            fbDb.ref('printQueue').off('child_added', printQueueListener);
+            fbDb.ref('printQueue').off('value', printQueueListener);
             printQueueListener = null;
         }
         if (pendingQueueInterval) {
