@@ -2195,6 +2195,10 @@ function doGet(e) {
             btn.textContent = 'Connected';
             btn.classList.add('connected');
             showDisconnectBtn(true);
+            // Hide the "Available printer" hint — we're now connected
+            const bleNote = document.getElementById('bleNote');
+            bleNote.classList.remove('visible');
+            bleNote.innerHTML = '';
 
             // Auto-enable printer mode: this device has BLE, so it's the printer
             if (!isPrinterMode()) setPrinterMode(true);
@@ -2347,6 +2351,9 @@ function doGet(e) {
             document.getElementById('printerName').textContent = BLE.device.name || 'Printer';
             btn.textContent = 'Connected';
             btn.classList.add('connected');
+            const bleNote = document.getElementById('bleNote');
+            bleNote.classList.remove('visible');
+            bleNote.innerHTML = '';
 
             if (!isPrinterMode()) setPrinterMode(true);
             showDisconnectBtn(true);
