@@ -2164,6 +2164,7 @@ function doGet(e) {
             // Step 4: Connected!
             BLE.writeChar = writeChar;
             BLE.connected = true;
+            reconnectAttempts = 0;
 
             dot.classList.remove('connecting');
             dot.classList.add('connected');
@@ -2178,12 +2179,14 @@ function doGet(e) {
             device.addEventListener('gattserverdisconnected', () => {
                 BLE.connected = false;
                 BLE.writeChar = null;
-                if (isPrinterMode()) setPrinterMode(false);
                 dot.classList.remove('connected');
-                document.getElementById('printerName').textContent = 'Disconnected';
-                btn.textContent = 'Reconnect';
+                dot.classList.add('connecting');
+                document.getElementById('printerName').textContent = 'Reconnecting...';
+                btn.textContent = 'Reconnecting...';
                 btn.classList.remove('connected');
-                toast('Printer disconnected');
+                toast('Printer disconnected — auto-reconnecting...');
+                // Auto-reconnect after a brief delay
+                setTimeout(() => autoReconnectBLE(), 2000);
             });
 
             const noResp = writeChar.properties.writeWithoutResponse;
@@ -2213,6 +2216,71 @@ function doGet(e) {
             } else {
                 toast(msg);
             }
+        }
+    }
+
+    // Auto-reconnect to a previously connected printer (no user gesture needed)
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 5;
+
+    async function autoReconnectBLE() {
+        if (!BLE.device || BLE.connected) return;
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            const btn = document.getElementById('connectBtn');
+            const dot = document.getElementById('printerDot');
+            dot.classList.remove('connecting');
+            btn.textContent = 'Reconnect';
+            toast(`Auto-reconnect failed after ${MAX_RECONNECT_ATTEMPTS} attempts. Tap Reconnect to try manually.`);
+            reconnectAttempts = 0;
+            if (isPrinterMode()) setPrinterMode(false);
+            return;
+        }
+
+        reconnectAttempts++;
+        console.log(`[BLE] Auto-reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
+
+        try {
+            const server = await BLE.device.gatt.connect();
+            console.log('[BLE] GATT reconnected');
+
+            // Re-discover the write characteristic using saved config
+            const svc = await server.getPrimaryService(BLE.config.serviceUuid);
+            const chars = await svc.getCharacteristics();
+            let writeChar = null;
+            for (const c of chars) {
+                if (c.properties.writeWithoutResponse || c.properties.write) {
+                    if (!writeChar || (c.properties.writeWithoutResponse && !writeChar.properties.writeWithoutResponse)) {
+                        writeChar = c;
+                    }
+                }
+            }
+
+            if (!writeChar) throw new Error('Write characteristic not found');
+
+            BLE.writeChar = writeChar;
+            BLE.connected = true;
+            reconnectAttempts = 0;
+
+            const dot = document.getElementById('printerDot');
+            const btn = document.getElementById('connectBtn');
+            dot.classList.remove('connecting');
+            dot.classList.add('connected');
+            document.getElementById('printerName').textContent = BLE.device.name || 'Printer';
+            btn.textContent = 'Connected';
+            btn.classList.add('connected');
+
+            if (!isPrinterMode()) setPrinterMode(true);
+            setTimeout(processPendingQueue, 500);
+
+            const noResp = writeChar.properties.writeWithoutResponse;
+            toast(`Printer reconnected! Mode: ${noResp ? 'FAST' : 'slow'}`);
+            console.log(`[BLE] Reconnected. Mode: ${noResp ? 'writeNoResp' : 'writeWithResp'}`);
+
+        } catch (e) {
+            console.warn(`[BLE] Reconnect attempt ${reconnectAttempts} failed:`, e?.message);
+            // Retry with exponential backoff (2s, 4s, 8s, 16s, 32s)
+            const delay = Math.min(2000 * Math.pow(2, reconnectAttempts - 1), 32000);
+            setTimeout(() => autoReconnectBLE(), delay);
         }
     }
 
