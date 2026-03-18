@@ -2482,87 +2482,57 @@ function doGet(e) {
         const inverted = new Uint8Array(bd.bitmap.length);
         for (let i = 0; i < bd.bitmap.length; i++) inverted[i] = bd.bitmap[i] ^ 0xFF;
 
-        // Find vertical content ranges (non-white rows)
-        const ranges = [];
-        let rangeStart = -1;
+        // Find vertical content bounds
+        let firstRow = -1, lastRow = -1;
         for (let y = 0; y < bd.height; y++) {
             const off = y * bd.bytesPerLine;
-            let hasContent = false;
             for (let b = 0; b < bd.bytesPerLine; b++) {
-                if (inverted[off + b] !== 0x00) { hasContent = true; break; }
-            }
-            if (hasContent && rangeStart === -1) rangeStart = y;
-            else if (!hasContent && rangeStart !== -1) { ranges.push([rangeStart, y]); rangeStart = -1; }
-        }
-        if (rangeStart !== -1) ranges.push([rangeStart, bd.height]);
-        const merged = [];
-        for (const r of ranges) {
-            if (merged.length && r[0] - merged[merged.length - 1][1] < 8) merged[merged.length - 1][1] = r[1];
-            else merged.push([...r]);
-        }
-
-        // Find horizontal content bounds (leftmost/rightmost non-white byte)
-        let minByte = bd.bytesPerLine, maxByte = 0;
-        for (const [sY, eY] of merged) {
-            for (let y = sY; y < eY; y++) {
-                const off = y * bd.bytesPerLine;
-                for (let b = 0; b < bd.bytesPerLine; b++) {
-                    if (inverted[off + b] !== 0x00) { if (b < minByte) minByte = b; break; }
-                }
-                for (let b = bd.bytesPerLine - 1; b >= 0; b--) {
-                    if (inverted[off + b] !== 0x00) { if (b > maxByte) maxByte = b; break; }
+                if (inverted[off + b] !== 0x00) {
+                    if (firstRow === -1) firstRow = y;
+                    lastRow = y;
+                    break;
                 }
             }
         }
-        const cropLeft = Math.max(0, minByte - 1);
-        const cropRight = Math.min(bd.bytesPerLine, maxByte + 2);
-        const cropW = cropRight - cropLeft;
-        const cropX = cropLeft * 8; // pixel offset
+        if (firstRow === -1) { firstRow = 0; lastRow = bd.height - 1; }
+        const cropH = lastRow - firstRow + 1;
 
-        // Build TSPL2 command with cropped bitmap regions
+        // Build TSPL2 command with single BITMAP for Chinese
         const pq = getPrintQuality();
-        const parts = [];
-        parts.push(enc.encode(
+        const header = enc.encode(
             `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
             `GAP 3 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
             `SPEED ${pq.speed}\r\n` +
             `DENSITY ${pq.density}\r\n` +
-            `CLS\r\n`
-        ));
+            `CLS\r\n` +
+            `BITMAP 0,${firstRow},${bd.bytesPerLine},${cropH},0,`
+        );
+        const bitmapData = inverted.subarray(firstRow * bd.bytesPerLine, (lastRow + 1) * bd.bytesPerLine);
 
-        for (const [startY, endY] of merged) {
-            const h = endY - startY;
-            parts.push(enc.encode(`BITMAP ${cropX},${startY},${cropW},${h},0,`));
-            const regionData = new Uint8Array(cropW * h);
-            for (let y = 0; y < h; y++) {
-                const srcOff = (startY + y) * bd.bytesPerLine + cropLeft;
-                regionData.set(inverted.subarray(srcOff, srcOff + cropW), y * cropW);
-            }
-            parts.push(regionData);
-        }
-
+        let enCmd = '';
         if (hasEN) {
             let mult = 3;
             while (english.length * 24 * mult > LABEL_W - 40 && mult > 1) mult--;
             const charW = 24 * mult, charH = 32 * mult;
             const enX = Math.max(10, Math.floor((LABEL_W - english.length * charW) / 2));
             const enYpos = Math.floor(LABEL_H * 0.72 - charH / 2);
-            parts.push(enc.encode(`TEXT ${enX},${enYpos},"4",0,${mult},${mult},"${english}"\r\n`));
+            enCmd = `TEXT ${enX},${enYpos},"4",0,${mult},${mult},"${english}"\r\n`;
         }
 
-        parts.push(enc.encode(`PRINT 1\r\n`));
-        const totalLen = parts.reduce((s, p) => s + p.length, 0);
+        const footer = enc.encode(`\r\n${enCmd}PRINT 1\r\n`);
+        const totalLen = header.length + bitmapData.length + footer.length;
         const cmd = new Uint8Array(totalLen);
-        let off = 0;
-        for (const p of parts) { cmd.set(p, off); off += p.length; }
+        cmd.set(header, 0);
+        cmd.set(bitmapData, header.length);
+        cmd.set(footer, header.length + bitmapData.length);
         const mode = hasEN ? 'hybrid' : 'bitmap-cn';
-        console.log(`[TSPL2-${mode}] ${totalLen} bytes (${merged.length} regions, ${cropW}/${bd.bytesPerLine} bytes/row)`);
+        console.log(`[TSPL2-${mode}] ${totalLen} bytes (1 BITMAP, rows ${firstRow}-${lastRow})`);
         return cmd;
     }
 
-    // TSPL2 BITMAP mode — sends rendered image with maximum cropping
-    // Optimized: skips white rows (vertical) AND white columns (horizontal)
+    // TSPL2 BITMAP mode — sends rendered image as a single BITMAP command
+    // Uses one contiguous BITMAP from first content row to last content row
     function buildTSPL2Command(bd) {
         const { bitmap, bytesPerLine, width, height } = bd;
         const enc = new TextEncoder();
@@ -2571,87 +2541,51 @@ function doGet(e) {
         const inverted = new Uint8Array(bitmap.length);
         for (let i = 0; i < bitmap.length; i++) inverted[i] = bitmap[i] ^ 0xFF;
 
-        // Find non-white row ranges (vertical crop)
-        const ranges = [];
-        let rangeStart = -1;
+        // Find vertical content bounds (first and last non-white row)
+        let firstRow = -1, lastRow = -1;
         for (let y = 0; y < height; y++) {
             const off = y * bytesPerLine;
-            let hasContent = false;
             for (let b = 0; b < bytesPerLine; b++) {
-                if (inverted[off + b] !== 0x00) { hasContent = true; break; }
-            }
-            if (hasContent && rangeStart === -1) rangeStart = y;
-            else if (!hasContent && rangeStart !== -1) {
-                ranges.push([rangeStart, y]);
-                rangeStart = -1;
-            }
-        }
-        if (rangeStart !== -1) ranges.push([rangeStart, height]);
-
-        // Merge ranges that are close together (< 8 rows gap)
-        const merged = [];
-        for (const r of ranges) {
-            if (merged.length && r[0] - merged[merged.length - 1][1] < 8) {
-                merged[merged.length - 1][1] = r[1];
-            } else {
-                merged.push([...r]);
-            }
-        }
-
-        // Find horizontal content bounds (leftmost/rightmost non-white byte)
-        let minByte = bytesPerLine, maxByte = 0;
-        for (const [sY, eY] of merged) {
-            for (let y = sY; y < eY; y++) {
-                const off = y * bytesPerLine;
-                for (let b = 0; b < bytesPerLine; b++) {
-                    if (inverted[off + b] !== 0x00) { if (b < minByte) minByte = b; break; }
-                }
-                for (let b = bytesPerLine - 1; b >= 0; b--) {
-                    if (inverted[off + b] !== 0x00) { if (b > maxByte) maxByte = b; break; }
+                if (inverted[off + b] !== 0x00) {
+                    if (firstRow === -1) firstRow = y;
+                    lastRow = y;
+                    break;
                 }
             }
         }
-        const cropLeft = Math.max(0, minByte - 1);   // 1 byte padding
-        const cropRight = Math.min(bytesPerLine, maxByte + 2);
-        const cropW = cropRight - cropLeft;
-        const cropX = cropLeft * 8; // pixel X offset
+        if (firstRow === -1) { firstRow = 0; lastRow = height - 1; }
+
+        const cropH = lastRow - firstRow + 1;
 
         // Label dimensions in mm (203 DPI)
         const widthMM = (width / 203 * 25.4).toFixed(1);
         const heightMM = (height / 203 * 25.4).toFixed(1);
 
-        // Build command: CLS clears to white, then cropped BITMAP for content only
+        // Build command: single BITMAP command, full width, cropped vertically
         const pq = getPrintQuality();
-        const parts = [];
-        parts.push(enc.encode(
+        const header = enc.encode(
             `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
             `GAP 3 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
             `SPEED ${pq.speed}\r\n` +
             `DENSITY ${pq.density}\r\n` +
-            `CLS\r\n`
-        ));
+            `CLS\r\n` +
+            `BITMAP 0,${firstRow},${bytesPerLine},${cropH},0,`
+        );
 
-        for (const [startY, endY] of merged) {
-            const h = endY - startY;
-            parts.push(enc.encode(`BITMAP ${cropX},${startY},${cropW},${h},0,`));
-            // Extract only the cropped columns for each row
-            const regionData = new Uint8Array(cropW * h);
-            for (let y = 0; y < h; y++) {
-                const srcOff = (startY + y) * bytesPerLine + cropLeft;
-                regionData.set(inverted.subarray(srcOff, srcOff + cropW), y * cropW);
-            }
-            parts.push(regionData);
-        }
+        // Extract bitmap data for content rows
+        const bitmapData = inverted.subarray(firstRow * bytesPerLine, (lastRow + 1) * bytesPerLine);
 
-        parts.push(enc.encode(`PRINT 1\r\n`));
+        const footer = enc.encode(`\r\nPRINT 1\r\n`);
 
-        const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
+        // Combine into single buffer
+        const totalLen = header.length + bitmapData.length + footer.length;
         const cmd = new Uint8Array(totalLen);
-        let off = 0;
-        for (const p of parts) { cmd.set(p, off); off += p.length; }
-        const rawSize = bitmap.length + 200;
-        console.log(`[TSPL2] ${totalLen} bytes (${merged.length} regions, ${cropW}/${bytesPerLine} cols, saved ${Math.round((1 - totalLen / rawSize) * 100)}%)`);
+        cmd.set(header, 0);
+        cmd.set(bitmapData, header.length);
+        cmd.set(footer, header.length + bitmapData.length);
+
+        console.log(`[TSPL2] ${totalLen} bytes (1 BITMAP, rows ${firstRow}-${lastRow}, ${bytesPerLine} bytes/row)`);
         return cmd;
     }
 
