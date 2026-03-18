@@ -898,7 +898,6 @@
             <div class="header-right">
                 <span class="attendance-badge" id="badge" onclick="showAttendance()">0 checked in</span>
                 <button class="icon-btn admin-only" onclick="showAuditLog()" title="Audit Log">&#128203;</button>
-                <button class="icon-btn admin-only" onclick="showDeviceList()" title="Devices">&#128241;</button>
                 <button class="icon-btn admin-only" onclick="showManage()" title="Manage Names">&#9998;</button>
                 <button class="icon-btn" onclick="showAdminLogin()" title="Admin Login" id="admin-lock-btn">&#128274;</button>
                 <button class="icon-btn" onclick="showSettings()" title="Settings">&#9881;</button>
@@ -1519,6 +1518,19 @@ function doGet(e) {
         return localStorage.getItem('thrive_device_name') || getDefaultDeviceName();
     }
     function setDeviceName(name) { localStorage.setItem('thrive_device_name', name); }
+    function promptDeviceName() {
+        if (localStorage.getItem('thrive_device_name')) return; // Already set
+        // Show a one-time prompt for the user's name on first visit
+        setTimeout(() => {
+            const name = prompt('Welcome! Please enter your name so we can identify this device (e.g. "Patrick"):');
+            if (name && name.trim()) {
+                const deviceName = `${name.trim()}'s ${detectDeviceType()}`;
+                setDeviceName(deviceName);
+                const input = document.getElementById('setting-device-name');
+                if (input) input.value = deviceName;
+            }
+        }, 1500);
+    }
 
     // ============================================================
     // ACCESS CONTROL
@@ -1678,6 +1690,7 @@ function doGet(e) {
         devNameInput.value = localStorage.getItem('thrive_device_name') || '';
         devNameInput.placeholder = getDefaultDeviceName();
         updatePrinterModeUI();
+        promptDeviceName();
 
         // Start print queue listener if printer mode was left on (BLE will auto-enable it)
         // Note: printer mode auto-enables when BLE connects, auto-disables when BLE disconnects
@@ -3405,8 +3418,10 @@ function doGet(e) {
         const kids = att.filter(a => a.isKid).length;
         const adults = total - kids;
         const newCount = att.filter(a => a.isNew).length;
-        const parts = [`${adults}A`, `${kids}K`];
-        if (newCount > 0) parts.push(`${newCount}N`);
+        const parts = [];
+        if (adults > 0) parts.push(`${adults} Adult${adults !== 1 ? 's' : ''}`);
+        if (kids > 0) parts.push(`${kids} Kid${kids !== 1 ? 's' : ''}`);
+        if (newCount > 0) parts.push(`${newCount} New`);
         badge.innerHTML = `${total} in<span class="badge-sub">${parts.join(' · ')}</span>`;
     }
 
@@ -3442,8 +3457,11 @@ function doGet(e) {
         const kids = att.filter(a => a.isKid).length;
         const adults = total - kids;
         const newCount = att.filter(a => a.isNew).length;
-        let subtitle = `${adults}A · ${kids}K`;
-        if (newCount > 0) subtitle += ` · ${newCount} new`;
+        const subParts = [];
+        if (adults > 0) subParts.push(`${adults} Adult${adults !== 1 ? 's' : ''}`);
+        if (kids > 0) subParts.push(`${kids} Kid${kids !== 1 ? 's' : ''}`);
+        if (newCount > 0) subParts.push(`${newCount} New`);
+        const subtitle = subParts.join(' · ');
         document.getElementById('attendance-title').textContent =
             `Attendance ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${total} (${subtitle})`;
         document.getElementById('attendance-overlay').classList.add('active');
