@@ -882,32 +882,33 @@
     <!-- Lock Screen (shown outside service hours for non-admins) -->
     <div id="lock-screen" style="display:none;">
         <div class="lock-card">
-            <h1>Thrive Name Tags</h1>
-            <p>This app is available during Sunday services<br>(9:00 AM &ndash; 1:30 PM).</p>
-            <p class="lock-sub">Admin access:</p>
-            <input type="password" id="lock-passphrase" placeholder="Enter passphrase" autocomplete="off"
+            <h1 data-i18n="app_title">Thrive Name Tags</h1>
+            <p data-i18n="lock_msg">This app is available during Sunday services<br>(9:00 AM &ndash; 1:30 PM).</p>
+            <p class="lock-sub" data-i18n="lock_admin">Admin access:</p>
+            <input type="password" id="lock-passphrase" data-i18n="lock_placeholder" placeholder="Enter passphrase" autocomplete="off"
                    onkeydown="if(event.key==='Enter')unlockWithPassphrase()">
-            <button class="btn btn-primary" onclick="unlockWithPassphrase()">Unlock</button>
+            <button class="btn btn-primary" onclick="unlockWithPassphrase()" data-i18n="unlock">Unlock</button>
             <div class="lock-error" id="lock-error"></div>
         </div>
     </div>
 
     <div id="app" style="display:none;">
         <header>
-            <h1>Thrive Name Tags</h1>
+            <h1 data-i18n="app_title">Thrive Name Tags</h1>
             <div class="header-right">
                 <span class="attendance-badge" id="badge" onclick="showAttendance()">0 checked in</span>
-                <button class="icon-btn admin-only" onclick="showAuditLog()" title="Audit Log">&#128203;</button>
-                <button class="icon-btn admin-only" onclick="showManage()" title="Manage Names">&#9998;</button>
-                <button class="icon-btn" onclick="showAdminLogin()" title="Admin Login" id="admin-lock-btn">&#128274;</button>
-                <button class="icon-btn" onclick="showSettings()" title="Settings">&#9881;</button>
-                <button class="icon-btn" onclick="refreshData()" title="Refresh" id="refresh-btn">&#8635;</button>
+                <button class="icon-btn" onclick="toggleLanguage()" id="lang-toggle" title="Language" style="font-weight:700;font-size:13px;">中</button>
+                <button class="icon-btn admin-only" onclick="showAuditLog()" data-i18n-title="audit_log" title="Audit Log">&#128203;</button>
+                <button class="icon-btn admin-only" onclick="showManage()" data-i18n-title="manage_names" title="Manage Names">&#9998;</button>
+                <button class="icon-btn" onclick="showAdminLogin()" data-i18n-title="admin_login" title="Admin Login" id="admin-lock-btn">&#128274;</button>
+                <button class="icon-btn" onclick="showSettings()" data-i18n-title="settings" title="Settings">&#9881;</button>
+                <button class="icon-btn" onclick="refreshData()" data-i18n-title="refresh" title="Refresh" id="refresh-btn">&#8635;</button>
             </div>
         </header>
 
         <!-- Printer Mode Indicator -->
         <div id="printer-mode-indicator" style="display:none;align-items:center;justify-content:center;flex-direction:column;gap:4px;padding:10px 16px;background:linear-gradient(135deg,#10b981,#059669);color:white;font-size:13px;font-weight:600;border-radius:10px;margin:0 16px 8px;">
-            <div>🖨️ Printer Mode Active — Receiving print jobs wirelessly</div>
+            <div data-i18n="printer_mode">🖨️ Printer Mode Active — Receiving print jobs wirelessly</div>
             <div id="queue-debug" style="font-size:11px;font-weight:400;opacity:0.9;"></div>
         </div>
 
@@ -915,35 +916,35 @@
         <div class="printer-bar">
             <div class="printer-status">
                 <div class="status-dot" id="printerDot"></div>
-                <span class="printer-name" id="printerName">No printer</span>
+                <span class="printer-name" id="printerName" data-i18n="no_printer">No printer</span>
             </div>
-            <button class="connect-btn" id="connectBtn" onclick="connectPrinter()">Connect Printer</button>
-            <button class="connect-btn" id="disconnectBtn" onclick="disconnectPrinter()" style="display:none;background:#ef4444;padding:8px 12px;font-size:13px;">Disconnect</button>
+            <button class="connect-btn" id="connectBtn" onclick="connectPrinter()" data-i18n="connect_printer">Connect Printer</button>
+            <button class="connect-btn" id="disconnectBtn" onclick="disconnectPrinter()" style="display:none;background:#ef4444;padding:8px 12px;font-size:13px;" data-i18n="disconnect">Disconnect</button>
         </div>
         <div class="ble-note" id="bleNote"></div>
 
         <div class="search-area">
             <div class="search-box">
-                <input type="text" id="search" placeholder="Search name..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                <input type="text" id="search" data-i18n="search_placeholder" placeholder="Search name..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
                 <button class="clear-btn" id="clear-search" onclick="clearSearch()">&#10005;</button>
             </div>
             <div class="filters">
-                <button class="filter-btn active" data-filter="all" onclick="setFilter('all',this)">All</button>
-                <button class="filter-btn" data-filter="1" onclick="setFilter('1',this)">1st Service</button>
-                <button class="filter-btn" data-filter="2" onclick="setFilter('2',this)">2nd Service</button>
+                <button class="filter-btn active" data-filter="all" onclick="setFilter('all',this)" data-i18n="filter_all">All</button>
+                <button class="filter-btn" data-filter="1" onclick="setFilter('1',this)" data-i18n="filter_1st">1st Service</button>
+                <button class="filter-btn" data-filter="2" onclick="setFilter('2',this)" data-i18n="filter_2nd">2nd Service</button>
             </div>
             <div class="status-filters">
-                <button class="filter-btn active" onclick="setStatusFilter('active',this)">Active</button>
-                <button class="filter-btn" onclick="setStatusFilter('all',this)">Everyone</button>
-                <button class="filter-btn" onclick="setStatusFilter('inactive',this)">Inactive</button>
+                <button class="filter-btn active" onclick="setStatusFilter('active',this)" data-i18n="filter_active">Active</button>
+                <button class="filter-btn" onclick="setStatusFilter('all',this)" data-i18n="filter_everyone">Everyone</button>
+                <button class="filter-btn" onclick="setStatusFilter('inactive',this)" data-i18n="filter_inactive">Inactive</button>
             </div>
         </div>
 
         <div class="name-grid" id="name-grid">
-            <div class="loading"><div class="spinner"></div>Loading names...</div>
+            <div class="loading"><div class="spinner"></div><span data-i18n="loading">Loading names...</span></div>
         </div>
 
-        <button class="fab" onclick="showNewPerson()" title="Add new person">+</button>
+        <button class="fab" onclick="showNewPerson()" data-i18n-title="add_new_person" title="Add new person">+</button>
     </div>
 
     <!-- Preview / Print Modal -->
@@ -969,14 +970,14 @@
     <div class="modal-overlay" id="attendance-overlay" onclick="closeModal('attendance-overlay',event)">
         <div class="modal wide" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h2 id="attendance-title">Today's Attendance</h2>
+                <h2 id="attendance-title" data-i18n="attendance_title">Today's Attendance</h2>
                 <button class="icon-btn" onclick="closeModalDirect('attendance-overlay')">&#10005;</button>
             </div>
             <div class="modal-body" id="attendance-body"></div>
             <div class="attendance-actions">
-                <button class="btn btn-secondary admin-only" onclick="exportCSV()">Export CSV</button>
-                <button class="btn btn-secondary admin-only" onclick="clearAttendance()">Clear Today</button>
-                <button class="btn btn-cancel" onclick="closeModalDirect('attendance-overlay')">Close</button>
+                <button class="btn btn-secondary admin-only" onclick="exportCSV()" data-i18n="export_csv">Export CSV</button>
+                <button class="btn btn-secondary admin-only" onclick="clearAttendance()" data-i18n="clear_today">Clear Today</button>
+                <button class="btn btn-cancel" onclick="closeModalDirect('attendance-overlay')" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -985,21 +986,21 @@
     <div class="modal-overlay" id="new-overlay" onclick="closeModal('new-overlay',event)">
         <div class="modal" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h2>New Person</h2>
+                <h2 data-i18n="new_person">New Person</h2>
                 <button class="icon-btn" onclick="closeModalDirect('new-overlay')">&#10005;</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>Chinese Name (optional)</label>
-                    <input type="text" id="new-chinese" placeholder="e.g. &#20237;&#20426;&#24421;" autocomplete="off">
+                    <label data-i18n="chinese_name_opt">Chinese Name (optional)</label>
+                    <input type="text" id="new-chinese" placeholder="e.g. 伍俊彥" autocomplete="off">
                 </div>
                 <div class="form-group">
-                    <label>English Name (optional)</label>
+                    <label data-i18n="english_name_opt">English Name (optional)</label>
                     <input type="text" id="new-english" placeholder="e.g. Patrick" autocomplete="off">
                 </div>
                 <div class="form-actions">
-                    <button class="btn btn-primary" onclick="createNewTag()">Preview Tag</button>
-                    <button class="btn btn-cancel" onclick="closeModalDirect('new-overlay')">Cancel</button>
+                    <button class="btn btn-primary" onclick="createNewTag()" data-i18n="preview_tag">Preview Tag</button>
+                    <button class="btn btn-cancel" onclick="closeModalDirect('new-overlay')" data-i18n="cancel">Cancel</button>
                 </div>
             </div>
         </div>
@@ -1009,47 +1010,46 @@
     <div class="modal-overlay" id="settings-overlay" onclick="closeModal('settings-overlay',event)">
         <div class="modal wide" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h2>Settings</h2>
+                <h2 data-i18n="settings">Settings</h2>
                 <button class="icon-btn" onclick="closeModalDirect('settings-overlay')">&#10005;</button>
             </div>
             <div class="modal-body">
                 <div class="setting-row" style="background:var(--success-bg);padding:12px;border-radius:8px;margin-bottom:8px;">
                     <label style="display:flex;align-items:center;gap:10px;font-weight:600;">
                         <input type="checkbox" id="setting-printer-mode" onchange="setPrinterMode(this.checked)" style="width:20px;height:20px;">
-                        🖨️ Printer Mode
+                        <span data-i18n="printer_mode_label">🖨️ Printer Mode</span>
                     </label>
-                    <div class="hint">Auto-enabled when printer is connected. Receives and prints jobs from other devices wirelessly.</div>
                 </div>
                 <div class="setting-row">
-                    <label>Google Apps Script URL (override)</label>
+                    <label data-i18n="script_url_label">Google Apps Script URL (override)</label>
                     <input type="url" id="script-url" placeholder="Leave blank to use built-in default">
                     <div class="hint">A default URL is built in. Only set this to override with a new deployment URL.</div>
                 </div>
                 <div class="setting-row">
-                    <label>Print Quality</label>
+                    <label data-i18n="print_quality">Print Quality</label>
                     <select id="setting-print-quality" style="padding:8px;border-radius:6px;border:1px solid #ddd;font-size:16px;">
-                        <option value="1">1F — Fast (lighter print, faster)</option>
-                        <option value="2">2F — Normal</option>
-                        <option value="3">3F — High Quality (darker, slower)</option>
+                        <option value="1" data-i18n="pq_fast">1F — Fast (lighter print, faster)</option>
+                        <option value="2" data-i18n="pq_normal">2F — Normal</option>
+                        <option value="3" data-i18n="pq_high">3F — High Quality (darker, slower)</option>
                     </select>
                     <div class="hint">Lower quality = faster printing. 1F is recommended for name tags.</div>
                 </div>
                 <div class="setting-row">
-                    <label>BLE Diagnostics</label>
+                    <label data-i18n="ble_diagnostics">BLE Diagnostics</label>
                     <div id="ble-diagnostics" style="font-family:monospace;font-size:12px;background:#f5f5f5;padding:8px;border-radius:4px;color:#333;">Not connected</div>
                     <div class="hint">Shows BLE write mode and speed. writeNoResp = fast, writeWithResp = slow.</div>
                 </div>
                 <div class="setting-row">
-                    <label>Device Name</label>
+                    <label data-i18n="device_name">Device Name</label>
                     <input type="text" id="setting-device-name" placeholder="">
                     <div class="hint">Auto-detected. Override with owner's name (e.g. "Patrick's iPad") to identify this device.</div>
                 </div>
                 <div class="setting-row">
-                    <label>BLE Service UUID</label>
+                    <label data-i18n="ble_service_uuid">BLE Service UUID</label>
                     <input type="text" id="setting-service-uuid" placeholder="000000ff-0000-1000-8000-00805f9b34fb">
                     <div class="hint">Auto-detected on first connect. Change only if needed.</div>
                 </div>
-                <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-bottom:14px;">Save Settings</button>
+                <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-bottom:14px;" data-i18n="save_settings">Save Settings</button>
 
                 <details style="margin-bottom:14px;">
                     <summary style="cursor:pointer;font-weight:600;font-size:13px;">BLE Debug: Scan for Services</summary>
@@ -1271,16 +1271,16 @@ function doGet(e) {
     <div class="modal-overlay" id="manage-overlay" onclick="closeModal('manage-overlay',event)">
         <div class="modal wide" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h2>Manage Names</h2>
+                <h2 data-i18n="manage_names">Manage Names</h2>
                 <button class="icon-btn" onclick="closeModalDirect('manage-overlay')">&#10005;</button>
             </div>
             <div class="modal-body">
                 <div class="manage-search">
-                    <input type="text" id="manage-search" placeholder="Search names..." oninput="renderManageList()" autocomplete="off">
+                    <input type="text" id="manage-search" data-i18n="search_names" placeholder="Search names..." oninput="renderManageList()" autocomplete="off">
                 </div>
                 <div class="manage-toolbar">
-                    <button class="btn btn-primary" onclick="initMasterList()" id="init-master-btn">Initialize from Form Data</button>
-                    <button class="btn btn-secondary" onclick="refreshManageList()">&#8635; Refresh</button>
+                    <button class="btn btn-primary" onclick="initMasterList()" id="init-master-btn" data-i18n="initialize">Initialize from Form Data</button>
+                    <button class="btn btn-secondary" onclick="refreshManageList()">&#8635; <span data-i18n="refresh">Refresh</span></button>
                 </div>
                 <div id="manage-status" class="manage-status" style="display:none;"></div>
                 <div class="manage-count" id="manage-count"></div>
@@ -1288,10 +1288,10 @@ function doGet(e) {
                     <div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading...</div>
                 </div>
                 <div class="manage-add-form">
-                    <input type="text" id="add-chinese" placeholder="Chinese name" autocomplete="off">
-                    <input type="text" id="add-english" placeholder="English name" autocomplete="off">
-                    <input type="text" id="add-group" placeholder="Groups" autocomplete="off" style="max-width:130px;" title="Comma-separated groups (e.g. Chen Family, Worship Team)">
-                    <button class="btn btn-success" onclick="addNameToMaster()">+ Add</button>
+                    <input type="text" id="add-chinese" data-i18n="chinese_name" placeholder="Chinese name" autocomplete="off">
+                    <input type="text" id="add-english" data-i18n="english_name" placeholder="English name" autocomplete="off">
+                    <input type="text" id="add-group" data-i18n="groups" placeholder="Groups" autocomplete="off" style="max-width:130px;">
+                    <button class="btn btn-success" onclick="addNameToMaster()" data-i18n="add">+ Add</button>
                 </div>
             </div>
         </div>
@@ -1301,19 +1301,19 @@ function doGet(e) {
     <div class="modal-overlay" id="admin-overlay" onclick="closeModal('admin-overlay',event)">
         <div class="modal" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h2>Admin Login</h2>
+                <h2 data-i18n="admin_login">Admin Login</h2>
                 <button class="icon-btn" onclick="closeModalDirect('admin-overlay')">&#10005;</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>Passphrase</label>
-                    <input type="password" id="admin-passphrase" placeholder="Enter admin passphrase" autocomplete="off"
+                    <label data-i18n="passphrase">Passphrase</label>
+                    <input type="password" id="admin-passphrase" data-i18n="enter_passphrase" placeholder="Enter admin passphrase" autocomplete="off"
                            onkeydown="if(event.key==='Enter')adminLogin()">
                 </div>
                 <div class="lock-error" id="admin-error"></div>
                 <div class="form-actions">
-                    <button class="btn btn-primary" onclick="adminLogin()">Login</button>
-                    <button class="btn btn-cancel" onclick="closeModalDirect('admin-overlay')">Cancel</button>
+                    <button class="btn btn-primary" onclick="adminLogin()" data-i18n="login">Login</button>
+                    <button class="btn btn-cancel" onclick="closeModalDirect('admin-overlay')" data-i18n="cancel">Cancel</button>
                 </div>
             </div>
         </div>
@@ -1323,7 +1323,7 @@ function doGet(e) {
     <div class="modal-overlay" id="audit-overlay" onclick="closeModal('audit-overlay',event)">
         <div class="modal wide" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h2>Audit Log</h2>
+                <h2 data-i18n="audit_log">Audit Log</h2>
                 <button class="icon-btn" onclick="closeModalDirect('audit-overlay')">&#10005;</button>
             </div>
             <div class="modal-body">
@@ -1358,7 +1358,7 @@ function doGet(e) {
     // ============================================================
     const SHEET_ID = '1emTIXAFHBae-r6Zo3W48I_PBSMuPjC25dPnmNptz-bg';
     const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
-    const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxhTc92NP0R3K6YOo3l5F4oG57ayG50EvfVeMXgdfn1IIFhFp971lKKw4NbDHjsn0lM/exec';
+    const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyhxVhAjcf0Z60yP3xrMYgqXoFMTjyV9rD4ApsBfH9SUWU0PbN2XKKlezkPSIOiax8Y/exec';
     const LABEL_W = 609;  // 3" at 203 DPI
     const LABEL_H = 406;  // 2" at 203 DPI
     const CHINESE_FONT = '"Noto Sans TC", "PingFang TC", "Microsoft YaHei", sans-serif';
@@ -1366,6 +1366,215 @@ function doGet(e) {
     const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const HAS_BLE = !!navigator.bluetooth;
     const ATTENDANCE_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Attendance`;
+
+    // ============================================================
+    // i18n — Bilingual UI (English / Traditional Chinese)
+    // ============================================================
+    let currentLang = localStorage.getItem('thrive_lang') || 'en';
+
+    const I18N = {
+        // App title & lock screen
+        app_title:          { en: 'Thrive Name Tags', zh: 'Thrive 名牌' },
+        lock_msg:           { en: 'This app is available during Sunday services<br>(9:00 AM – 1:30 PM).', zh: '此應用程式僅在主日崇拜期間開放<br>(上午 9:00 – 下午 1:30)' },
+        lock_admin:         { en: 'Admin access:', zh: '管理員登入：' },
+        lock_placeholder:   { en: 'Enter passphrase', zh: '輸入密碼' },
+        unlock:             { en: 'Unlock', zh: '解鎖' },
+
+        // Header & badges
+        checked_in_zero:    { en: '0 checked in', zh: '0 人報到' },
+        checked_in:         { en: '{0} in', zh: '{0} 人' },
+        adults:             { en: '{0} Adult{1}', zh: '{0} 成人' },
+        kids:               { en: '{0} Kid{1}', zh: '{0} 兒童' },
+        new_people:         { en: '{0} New', zh: '{0} 新朋友' },
+
+        // Filters
+        filter_all:         { en: 'All', zh: '全部' },
+        filter_1st:         { en: '1st Service', zh: '第一堂' },
+        filter_2nd:         { en: '2nd Service', zh: '第二堂' },
+        filter_active:      { en: 'Active', zh: '活躍' },
+        filter_everyone:    { en: 'Everyone', zh: '所有人' },
+        filter_inactive:    { en: 'Inactive', zh: '非活躍' },
+
+        // Search
+        search_placeholder: { en: 'Search name...', zh: '搜尋姓名⋯' },
+        loading:            { en: 'Loading names...', zh: '載入中⋯' },
+        no_names:           { en: 'No names found', zh: '找不到姓名' },
+
+        // Printer
+        no_printer:         { en: 'No printer', zh: '未連接印表機' },
+        connect_printer:    { en: 'Connect Printer', zh: '連接印表機' },
+        connected:          { en: 'Connected', zh: '已連接' },
+        disconnect:         { en: 'Disconnect', zh: '中斷連接' },
+        reconnect:          { en: 'Reconnect', zh: '重新連接' },
+        scanning:           { en: 'Scanning...', zh: '掃描中⋯' },
+        reconnecting:       { en: 'Reconnecting...', zh: '重新連接中⋯' },
+        printer_mode:       { en: '🖨️ Printer Mode Active — Receiving print jobs wirelessly', zh: '🖨️ 印表機模式 — 正在無線接收列印工作' },
+        printer_mode_label: { en: '🖨️ Printer Mode', zh: '🖨️ 印表機模式' },
+
+        // Print actions
+        print:              { en: 'Print', zh: '列印' },
+        share:              { en: 'Share', zh: '分享' },
+        queue_print:        { en: '🖨️ Print', zh: '🖨️ 列印' },
+        share_nelko:        { en: 'Share to Nelko App', zh: '分享到 Nelko' },
+        browser_print:      { en: 'Browser Print', zh: '瀏覽器列印' },
+        preview_tag:        { en: 'Preview Tag', zh: '預覽名牌' },
+        is_kid:             { en: 'This person is a kid', zh: '此人為兒童' },
+        already_printed:    { en: 'Already printed today', zh: '今日已列印' },
+        sending:            { en: 'Sending to printer...', zh: '傳送至印表機⋯' },
+        printed:            { en: 'Printed! ({0}s)', zh: '已列印！({0}秒)' },
+        print_failed:       { en: 'Print failed: {0}. Try Share instead.', zh: '列印失敗：{0}。請改用分享。' },
+        sent_to_printer:    { en: 'Sent to printer! 🖨️', zh: '已傳送至印表機！🖨️' },
+        send_failed:        { en: 'Failed to send. Try Share instead.', zh: '傳送失敗。請改用分享。' },
+        printing_name:      { en: '🖨️ Printing: {0}...', zh: '🖨️ 列印中：{0}⋯' },
+        print_done:         { en: '✓ Printed: {0}', zh: '✓ 已列印：{0}' },
+        print_fail_name:    { en: 'Print failed: {0}', zh: '列印失敗：{0}' },
+        connect_first:      { en: 'Connect printer first', zh: '請先連接印表機' },
+        queue_unavail:      { en: 'Print queue unavailable', zh: '列印佇列無法使用' },
+        queue_send_fail:    { en: 'Failed to send print job', zh: '傳送列印工作失敗' },
+        queue_listening:    { en: '🖨️ Printer mode active — listening for jobs', zh: '🖨️ 印表機模式已啟動 — 等待列印工作' },
+        queue_empty:        { en: '✓ Queue empty — ready for jobs', zh: '✓ 佇列已清空 — 等待列印' },
+        queue_all_done:     { en: '✓ All jobs already processed', zh: '✓ 所有工作已處理' },
+        print_wireless_tip: { en: 'Print job will be sent wirelessly to the printer device.', zh: '列印工作將無線傳送至印表機裝置。' },
+
+        // Batch print
+        print_group:        { en: 'Print {0} ({1})', zh: '列印 {0} ({1})' },
+        batch_sending:      { en: 'Sending {0} {1} tags to printer...', zh: '正在傳送 {0} 個 {1} 名牌⋯' },
+        batch_sent:         { en: 'Sent {0} {1} tags! 🖨️', zh: '已傳送 {0} 個 {1} 名牌！🖨️' },
+        batch_fail:         { en: 'Failed to send batch.', zh: '批次傳送失敗。' },
+        no_group_members:   { en: 'No group members found', zh: '找不到群組成員' },
+
+        // Attendance
+        attendance_title:   { en: "Today's Attendance", zh: '今日出席' },
+        no_attendance:      { en: 'No one checked in yet.', zh: '尚無人報到。' },
+        section_new:        { en: '🆕 New People ({0})', zh: '🆕 新朋友 ({0})' },
+        section_adults:     { en: 'Adults ({0})', zh: '成人 ({0})' },
+        section_kids:       { en: '🧒 Kids ({0})', zh: '🧒 兒童 ({0})' },
+        export_csv:         { en: 'Export CSV', zh: '匯出 CSV' },
+        clear_today:        { en: 'Clear Today', zh: '清除今日' },
+        close:              { en: 'Close', zh: '關閉' },
+        checked_in_name:    { en: 'Checked in: {0}', zh: '已報到：{0}' },
+        reprinted:          { en: 'Reprinted ({0})', zh: '已重印 ({0})' },
+        no_data:            { en: 'No data', zh: '無資料' },
+        csv_exported:       { en: 'CSV exported', zh: '已匯出 CSV' },
+        cleared:            { en: 'Cleared', zh: '已清除' },
+
+        // New person modal
+        new_person:         { en: 'New Person', zh: '新朋友' },
+        chinese_name_opt:   { en: 'Chinese Name (optional)', zh: '中文姓名（選填）' },
+        english_name_opt:   { en: 'English Name (optional)', zh: '英文姓名（選填）' },
+        cancel:             { en: 'Cancel', zh: '取消' },
+        enter_one_name:     { en: 'Enter at least one name', zh: '請至少輸入一個姓名' },
+
+        // Settings
+        settings:           { en: 'Settings', zh: '設定' },
+        save_settings:      { en: 'Save Settings', zh: '儲存設定' },
+        settings_saved:     { en: 'Settings saved', zh: '設定已儲存' },
+        print_quality:      { en: 'Print Quality', zh: '列印品質' },
+        pq_fast:            { en: '1F — Fast (lighter print, faster)', zh: '1F — 快速（較淡、較快）' },
+        pq_normal:          { en: '2F — Normal', zh: '2F — 標準' },
+        pq_high:            { en: '3F — High Quality (darker, slower)', zh: '3F — 高品質（較深、較慢）' },
+        device_name:        { en: 'Device Name', zh: '裝置名稱' },
+        script_url_label:   { en: 'Google Apps Script URL (override)', zh: 'Google Apps Script 網址（覆蓋）' },
+        ble_diagnostics:    { en: 'BLE Diagnostics', zh: 'BLE 診斷' },
+        ble_service_uuid:   { en: 'BLE Service UUID', zh: 'BLE 服務 UUID' },
+        not_connected:      { en: 'Not connected', zh: '未連接' },
+
+        // Manage names
+        manage_names:       { en: 'Manage Names', zh: '管理姓名' },
+        search_names:       { en: 'Search names...', zh: '搜尋姓名⋯' },
+        add:                { en: '+ Add', zh: '+ 新增' },
+        initialize:         { en: 'Initialize from Form Data', zh: '從表單資料初始化' },
+        refresh:            { en: 'Refresh', zh: '重新整理' },
+        chinese_name:       { en: 'Chinese name', zh: '中文姓名' },
+        english_name:       { en: 'English name', zh: '英文姓名' },
+        groups:             { en: 'Groups', zh: '群組' },
+        saving:             { en: 'Saving...', zh: '儲存中⋯' },
+        saved:              { en: 'Saved!', zh: '已儲存！' },
+
+        // Admin
+        admin_login:        { en: 'Admin Login', zh: '管理員登入' },
+        passphrase:         { en: 'Passphrase', zh: '密碼' },
+        enter_passphrase:   { en: 'Enter admin passphrase', zh: '輸入管理員密碼' },
+        login:              { en: 'Login', zh: '登入' },
+        incorrect_pass:     { en: 'Incorrect passphrase', zh: '密碼錯誤' },
+        please_enter_pass:  { en: 'Please enter passphrase', zh: '請輸入密碼' },
+        admin_activated:    { en: 'Admin mode activated', zh: '管理員模式已啟動' },
+        already_admin:      { en: 'Already logged in as admin', zh: '已登入為管理員' },
+        admin_required:     { en: 'Admin access required', zh: '需要管理員權限' },
+
+        // Audit log
+        audit_log:          { en: 'Audit Log', zh: '操作記錄' },
+
+        // BLE notes
+        ble_ipad_tip:       { en: '<b>iPad tip:</b> Safari lacks Bluetooth. Use <b>Bluefy</b> browser for BLE printing, or tap <b>Share</b> to send the image to the Nelko app.', zh: '<b>iPad 提示：</b>Safari 不支援藍牙。請使用 <b>Bluefy</b> 瀏覽器列印，或點選<b>分享</b>傳送到 Nelko 應用程式。' },
+        ble_no_bt:          { en: 'Web Bluetooth not available in this browser. Use <b>Chrome</b> on Android or <b>Bluefy</b> on iPad.', zh: '此瀏覽器不支援 Web Bluetooth。請在 Android 使用 <b>Chrome</b>，iPad 使用 <b>Bluefy</b>。' },
+        ble_close_nelko:    { en: '<b>Important:</b> Close the Nelko app before connecting here. iOS only allows one app to connect via Bluetooth at a time.', zh: '<b>重要：</b>請先關閉 Nelko 應用程式再連接。iOS 同一時間只允許一個應用程式使用藍牙。' },
+        avail_printer:      { en: '<b>Available printer{0}:</b> {1}. Tap <b>Connect Printer</b> and select it from the list.', zh: '<b>可用印表機：</b>{1}。點選<b>連接印表機</b>並從列表中選擇。' },
+
+        // Misc
+        printer_disconnected: { en: 'Printer disconnected', zh: '印表機已中斷' },
+        auto_reconnecting:  { en: 'Printer disconnected — auto-reconnecting...', zh: '印表機已中斷 — 自動重新連接中⋯' },
+        reconnect_failed:   { en: 'Auto-reconnect failed after {0} attempts. Tap Reconnect to try manually.', zh: '自動重新連接失敗（已嘗試 {0} 次）。請手動點選重新連接。' },
+        printer_reconnected:{ en: 'Printer reconnected! Mode: {0}', zh: '印表機已重新連接！模式：{0}' },
+        printer_connected:  { en: 'Printer connected! Mode: {0}', zh: '印表機已連接！模式：{0}' },
+        cached_offline:     { en: 'Using cached data (offline)', zh: '使用快取資料（離線）' },
+        load_failed:        { en: 'Failed to load data', zh: '載入資料失敗' },
+        refreshed:          { en: 'Refreshed', zh: '已重新整理' },
+        loaded_names:       { en: 'Loaded {0} names', zh: '已載入 {0} 筆姓名' },
+        copied:             { en: 'Copied', zh: '已複製' },
+        add_new_person:     { en: 'Add new person', zh: '新增人員' },
+        script_url_set:     { en: 'Set Apps Script URL in Settings first', zh: '請先在設定中設定 Apps Script 網址' },
+        welcome_prompt:     { en: 'Welcome! Please enter your name so we can identify this device (e.g. "Patrick"):', zh: '歡迎！請輸入您的姓名以識別此裝置（例如：「志明」）：' },
+        print_disabled:     { en: 'Printing is disabled for privacy.', zh: '為保護隱私，已停用列印功能。' },
+    };
+
+    function t(key, ...args) {
+        const entry = I18N[key];
+        if (!entry) return key;
+        let str = entry[currentLang] || entry.en;
+        for (let i = 0; i < args.length; i++) {
+            str = str.replace(`{${i}}`, args[i]);
+        }
+        return str;
+    }
+
+    function setLanguage(lang) {
+        currentLang = lang;
+        localStorage.setItem('thrive_lang', lang);
+        applyLanguage();
+    }
+
+    function toggleLanguage() {
+        setLanguage(currentLang === 'en' ? 'zh' : 'en');
+    }
+
+    function applyLanguage() {
+        // Update all elements with data-i18n attribute
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            const entry = I18N[key];
+            if (!entry) return;
+            const text = entry[currentLang] || entry.en;
+            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                el.placeholder = text;
+            } else {
+                el.innerHTML = text;
+            }
+        });
+        // Update elements with data-i18n-title
+        document.querySelectorAll('[data-i18n-title]').forEach(el => {
+            const key = el.getAttribute('data-i18n-title');
+            const entry = I18N[key];
+            if (entry) el.title = entry[currentLang] || entry.en;
+        });
+        // Update language toggle button
+        const btn = document.getElementById('lang-toggle');
+        if (btn) btn.textContent = currentLang === 'en' ? '中' : 'EN';
+        // Re-render dynamic content
+        if (typeof updateBadge === 'function' && typeof getAttendance === 'function') {
+            try { updateBadge(); } catch {}
+        }
+    }
 
     // Access Control
     const SERVICE_WINDOW = { day: 0, startHour: 9, startMin: 0, endHour: 13, endMin: 30 }; // Sunday 9:00 AM – 1:30 PM
@@ -1522,7 +1731,7 @@ function doGet(e) {
         if (localStorage.getItem('thrive_device_name')) return; // Already set
         // Show a one-time prompt for the user's name on first visit
         setTimeout(() => {
-            const name = prompt('Welcome! Please enter your name so we can identify this device (e.g. "Patrick"):');
+            const name = prompt(t('welcome_prompt'));
             if (name && name.trim()) {
                 const deviceName = `${name.trim()}'s ${detectDeviceType()}`;
                 setDeviceName(deviceName);
@@ -1574,7 +1783,7 @@ function doGet(e) {
     async function unlockWithPassphrase() {
         const input = document.getElementById('lock-passphrase').value;
         const errEl = document.getElementById('lock-error');
-        if (!input) { errEl.textContent = 'Please enter passphrase'; return; }
+        if (!input) { errEl.textContent = t('please_enter_pass'); return; }
         const hash = await hashPassphrase(input);
         if (hash === ADMIN_HASH) {
             sessionStorage.setItem('thrive_admin', 'true');
@@ -1587,14 +1796,14 @@ function doGet(e) {
             init();
             auditLog('admin_login', 'Lock screen unlock');
         } else {
-            errEl.textContent = 'Incorrect passphrase';
+            errEl.textContent = t('incorrect_pass');
             document.getElementById('lock-passphrase').value = '';
         }
     }
 
     function showAdminLogin() {
         if (isAdminSession()) {
-            toast('Already logged in as admin');
+            toast(t('already_admin'));
             return;
         }
         document.getElementById('admin-passphrase').value = '';
@@ -1605,7 +1814,7 @@ function doGet(e) {
     async function adminLogin() {
         const input = document.getElementById('admin-passphrase').value;
         const errEl = document.getElementById('admin-error');
-        if (!input) { errEl.textContent = 'Please enter passphrase'; return; }
+        if (!input) { errEl.textContent = t('please_enter_pass'); return; }
         const hash = await hashPassphrase(input);
         if (hash === ADMIN_HASH) {
             sessionStorage.setItem('thrive_admin', 'true');
@@ -1613,10 +1822,10 @@ function doGet(e) {
             const lockBtn = document.getElementById('admin-lock-btn');
             if (lockBtn) lockBtn.style.display = 'none';
             closeModalDirect('admin-overlay');
-            toast('Admin mode activated');
+            toast(t('admin_activated'));
             auditLog('admin_login', 'In-app login');
         } else {
-            errEl.textContent = 'Incorrect passphrase';
+            errEl.textContent = t('incorrect_pass');
             document.getElementById('admin-passphrase').value = '';
         }
     }
@@ -1675,6 +1884,7 @@ function doGet(e) {
         if (!checkAccess()) return;
         _initDone = true;
 
+        applyLanguage();
         setupSearch();
         setupScreenProtection();
         try { await document.fonts.ready; } catch {}
@@ -1740,13 +1950,13 @@ function doGet(e) {
         const note = document.getElementById('bleNote');
         if (!HAS_BLE) {
             if (IS_IOS) {
-                note.innerHTML = '<b>iPad tip:</b> Safari lacks Bluetooth. Use <b>Bluefy</b> browser for BLE printing, or tap <b>Share</b> to send the image to the Nelko app.';
+                note.innerHTML = t('ble_ipad_tip');
             } else {
-                note.innerHTML = 'Web Bluetooth not available in this browser. Use <b>Chrome</b> on Android or <b>Bluefy</b> on iPad.';
+                note.innerHTML = t('ble_no_bt');
             }
             note.classList.add('visible');
         } else if (IS_IOS) {
-            note.innerHTML = '<b>Important:</b> Close the Nelko app before connecting here. iOS only allows one app to connect via Bluetooth at a time.';
+            note.innerHTML = t('ble_close_nelko');
             note.classList.add('visible');
         }
     }
@@ -1801,9 +2011,9 @@ function doGet(e) {
             const cached = localStorage.getItem('thrive_cache');
             if (cached) {
                 people = JSON.parse(cached);
-                toast('Using cached data (offline)');
+                toast(t('cached_offline'));
             } else {
-                toast('Failed to load data');
+                toast(t('load_failed'));
             }
         }
     }
@@ -2022,7 +2232,7 @@ function doGet(e) {
         }
 
         if (!filtered.length) {
-            grid.innerHTML = '<div class="empty-state">No names found</div>';
+            grid.innerHTML = `<div class="empty-state">${t('no_names')}</div>`;
             return;
         }
 
@@ -2101,7 +2311,7 @@ function doGet(e) {
 
         const btn = document.getElementById('connectBtn');
         const dot = document.getElementById('printerDot');
-        btn.textContent = 'Scanning...';
+        btn.textContent = t('scanning');
         dot.classList.add('connecting');
         dot.classList.remove('connected');
 
@@ -2229,7 +2439,7 @@ function doGet(e) {
             dot.classList.remove('connecting');
             dot.classList.add('connected');
             document.getElementById('printerName').textContent = device.name || 'Printer';
-            btn.textContent = 'Connected';
+            btn.textContent = t('connected');
             btn.classList.add('connected');
             showDisconnectBtn(true);
             // Hide the "Available printer" hint — we're now connected
@@ -2248,8 +2458,8 @@ function doGet(e) {
                 if (intentionalDisconnect) return; // User tapped Disconnect — don't auto-reconnect
                 dot.classList.remove('connected');
                 dot.classList.add('connecting');
-                document.getElementById('printerName').textContent = 'Reconnecting...';
-                btn.textContent = 'Reconnecting...';
+                document.getElementById('printerName').textContent = t('reconnecting');
+                btn.textContent = t('reconnecting');
                 btn.classList.remove('connected');
                 toast('Printer disconnected — auto-reconnecting...');
                 setTimeout(() => autoReconnectBLE(), 2000);
@@ -2265,7 +2475,7 @@ function doGet(e) {
 
         } catch (e) {
             dot.classList.remove('connecting');
-            btn.textContent = 'Connect Printer';
+            btn.textContent = t('connect_printer');
             const msg = e?.message || String(e) || 'Unknown error';
 
             // Don't show error if user just cancelled the picker
@@ -2327,11 +2537,11 @@ function doGet(e) {
         const dot = document.getElementById('printerDot');
         const btn = document.getElementById('connectBtn');
         dot.classList.remove('connected', 'connecting');
-        document.getElementById('printerName').textContent = 'No printer';
-        btn.textContent = 'Connect Printer';
+        document.getElementById('printerName').textContent = t('no_printer');
+        btn.textContent = t('connect_printer');
         btn.classList.remove('connected');
         document.getElementById('disconnectBtn').style.display = 'none';
-        toast('Printer disconnected');
+        toast(t('printer_disconnected'));
     }
 
     function showDisconnectBtn(show) {
@@ -2348,7 +2558,7 @@ function doGet(e) {
             const btn = document.getElementById('connectBtn');
             const dot = document.getElementById('printerDot');
             dot.classList.remove('connecting');
-            btn.textContent = 'Reconnect';
+            btn.textContent = t('reconnect');
             toast(`Auto-reconnect failed after ${MAX_RECONNECT_ATTEMPTS} attempts. Tap Reconnect to try manually.`);
             reconnectAttempts = 0;
             if (isPrinterMode()) setPrinterMode(false);
@@ -2386,7 +2596,7 @@ function doGet(e) {
             dot.classList.remove('connecting');
             dot.classList.add('connected');
             document.getElementById('printerName').textContent = BLE.device.name || 'Printer';
-            btn.textContent = 'Connected';
+            btn.textContent = t('connected');
             btn.classList.add('connected');
             const bleNote = document.getElementById('bleNote');
             bleNote.classList.remove('visible');
@@ -2700,7 +2910,7 @@ function doGet(e) {
         if (selectedPerson && isCheckedIn(selectedPerson)) {
             st.style.display = 'block';
             st.className = 'print-status info';
-            st.textContent = 'Already printed today';
+            st.textContent = t('already_printed');
         } else {
             st.style.display = 'none';
         }
@@ -2715,39 +2925,38 @@ function doGet(e) {
             for (const grp of personGroups) {
                 const grpMembers = people.filter(p => inGroup(p, grp));
                 if (grpMembers.length > 1) {
+                    const label = t('print_group', esc(grp), grpMembers.length);
                     if (BLE.connected) {
-                        buttons += `<button class="btn btn-success" onclick="doBatchPrint('${esc(grp)}')" id="btn-batch-${esc(grp)}">Print ${esc(grp)} (${grpMembers.length})</button>`;
+                        buttons += `<button class="btn btn-success" onclick="doBatchPrint('${esc(grp)}')" id="btn-batch-${esc(grp)}">${label}</button>`;
                     } else if (fbDb) {
-                        buttons += `<button class="btn btn-success" onclick="doQueueBatchPrint('${esc(grp)}')">Print ${esc(grp)} (${grpMembers.length})</button>`;
+                        buttons += `<button class="btn btn-success" onclick="doQueueBatchPrint('${esc(grp)}')">${label}</button>`;
                     }
                 }
             }
         }
 
         if (BLE.connected) {
-            // BLE connected: always print directly
-            buttons += '<button class="btn btn-primary" onclick="doBLEPrint()" id="btn-ble-print">Print</button>';
-            buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
+            buttons += `<button class="btn btn-primary" onclick="doBLEPrint()" id="btn-ble-print">${t('print')}</button>`;
+            buttons += `<button class="btn btn-secondary" onclick="doShare()">${t('share')}</button>`;
             tip.style.display = 'none';
         } else if (fbDb) {
-            // No BLE: send to print queue for another device to print
-            buttons += '<button class="btn btn-primary" onclick="doQueuePrint()" id="btn-queue-print">🖨️ Print</button>';
-            buttons += '<button class="btn btn-secondary" onclick="doShare()">Share</button>';
+            buttons += `<button class="btn btn-primary" onclick="doQueuePrint()" id="btn-queue-print">${t('queue_print')}</button>`;
+            buttons += `<button class="btn btn-secondary" onclick="doShare()">${t('share')}</button>`;
             tip.style.display = 'block';
-            tip.innerHTML = 'Print job will be sent wirelessly to the printer device.';
+            tip.innerHTML = t('print_wireless_tip');
         } else if (IS_IOS && !HAS_BLE) {
-            buttons += '<button class="btn btn-primary" onclick="doShare()">Share to Nelko App</button>';
-            buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
+            buttons += `<button class="btn btn-primary" onclick="doShare()">${t('share_nelko')}</button>`;
+            buttons += `<button class="btn btn-secondary" onclick="doBrowserPrint()">${t('browser_print')}</button>`;
             tip.style.display = 'block';
-            tip.innerHTML = 'Tap <b>Share to Nelko App</b>, select the Nelko app from the share sheet, then print from there.';
+            tip.innerHTML = t('ble_ipad_tip');
         } else {
-            buttons += '<button class="btn btn-primary" onclick="doShare()">Share</button>';
-            buttons += '<button class="btn btn-secondary" onclick="doBrowserPrint()">Browser Print</button>';
+            buttons += `<button class="btn btn-primary" onclick="doShare()">${t('share')}</button>`;
+            buttons += `<button class="btn btn-secondary" onclick="doBrowserPrint()">${t('browser_print')}</button>`;
             tip.style.display = 'block';
-            tip.textContent = 'Connect the printer first, or enable Printer Mode on another device.';
+            tip.textContent = t('connect_first');
         }
 
-        buttons += '<button class="btn btn-cancel" onclick="closeModalDirect(\'preview-overlay\')">Cancel</button>';
+        buttons += `<button class="btn btn-cancel" onclick="closeModalDirect('preview-overlay')">${t('cancel')}</button>`;
         actions.innerHTML = buttons;
 
         // Kid toggle checkbox
@@ -2756,7 +2965,7 @@ function doGet(e) {
             const kid = isKid(selectedPerson);
             opts.innerHTML = `<div class="preview-option-row">
                 <input type="checkbox" id="kid-check" ${kid ? 'checked' : ''} onchange="toggleKidFromPreview()">
-                <label for="kid-check">This person is a kid</label>
+                <label for="kid-check">${t('is_kid')}</label>
             </div>`;
         } else {
             opts.innerHTML = '';
@@ -2767,7 +2976,7 @@ function doGet(e) {
 
     async function doBLEPrint() {
         printDebug('▶ doBLEPrint() called');
-        if (!BLE.connected) { toast('Connect printer first'); printDebug('  ⛔ not connected'); return; }
+        if (!BLE.connected) { toast(t('connect_first')); printDebug('  ⛔ not connected'); return; }
         if (printLock) { printDebug('  ⛔ printLock=true, ignoring'); return; }
         printLock = true;
         printDebug('  🔒 printLock=true');
@@ -2777,7 +2986,7 @@ function doGet(e) {
         if (btn) { btn.disabled = true; btn.textContent = 'Printing...'; btn.className = 'btn printing'; }
         st.style.display = 'block';
         st.className = 'print-status info';
-        st.textContent = 'Sending to printer...';
+        st.textContent = t('sending');
 
         try {
             const cn = selectedPerson?.chinese || '';
@@ -2870,10 +3079,10 @@ function doGet(e) {
     // BATCH PRINT (GROUP)
     // ============================================================
     async function doBatchPrint(groupName) {
-        if (!BLE.connected) { toast('Connect printer first'); return; }
+        if (!BLE.connected) { toast(t('connect_first')); return; }
 
         const members = people.filter(p => inGroup(p, groupName));
-        if (!members.length) { toast('No group members found'); return; }
+        if (!members.length) { toast(t('no_group_members')); return; }
 
         const st = document.getElementById('print-status');
         const actions = document.getElementById('print-actions');
@@ -2959,7 +3168,7 @@ function doGet(e) {
     let pendingQueueInterval = null;
 
     async function submitPrintJob(person) {
-        if (!fbDb) { toast('Print queue unavailable'); return false; }
+        if (!fbDb) { toast(t('queue_unavail')); return false; }
         try {
             await fbDb.ref('printQueue').push({
                 chinese: person.chinese || '',
@@ -2975,13 +3184,13 @@ function doGet(e) {
             return true;
         } catch (e) {
             console.error('submitPrintJob:', e);
-            toast('Failed to send print job');
+            toast(t('queue_send_fail'));
             return false;
         }
     }
 
     async function submitBatchPrintJobs(members, groupName) {
-        if (!fbDb) { toast('Print queue unavailable'); return false; }
+        if (!fbDb) { toast(t('queue_unavail')); return false; }
         try {
             const updates = {};
             for (const person of members) {
@@ -3013,7 +3222,7 @@ function doGet(e) {
         const actions = document.getElementById('print-actions');
         st.style.display = 'block';
         st.className = 'print-status info';
-        st.textContent = 'Sending to printer...';
+        st.textContent = t('sending');
         actions.querySelectorAll('button').forEach(b => { b.disabled = true; });
 
         const ok = await submitPrintJob(selectedPerson);
@@ -3021,18 +3230,18 @@ function doGet(e) {
             logAttendance(selectedPerson);
             renderGrid();
             st.className = 'print-status success';
-            st.textContent = 'Sent to printer! 🖨️';
+            st.textContent = t('sent_to_printer');
             setTimeout(() => closeModalDirect('preview-overlay'), 1200);
         } else {
             st.className = 'print-status error';
-            st.textContent = 'Failed to send. Try Share instead.';
+            st.textContent = t('send_failed');
             actions.querySelectorAll('button').forEach(b => { b.disabled = false; });
         }
     }
 
     async function doQueueBatchPrint(groupName) {
         const members = people.filter(p => inGroup(p, groupName));
-        if (!members.length) { toast('No group members found'); return; }
+        if (!members.length) { toast(t('no_group_members')); return; }
 
         const st = document.getElementById('print-status');
         const actions = document.getElementById('print-actions');
@@ -3050,7 +3259,7 @@ function doGet(e) {
             setTimeout(() => closeModalDirect('preview-overlay'), 1200);
         } else {
             st.className = 'print-status error';
-            st.textContent = 'Failed to send batch.';
+            st.textContent = t('batch_fail');
             actions.querySelectorAll('button').forEach(b => { b.disabled = false; });
         }
     }
@@ -3412,41 +3621,41 @@ function doGet(e) {
         const total = att.length;
         const badge = document.getElementById('badge');
         if (total === 0) {
-            badge.innerHTML = '0 checked in';
+            badge.innerHTML = t('checked_in_zero');
             return;
         }
         const kids = att.filter(a => a.isKid).length;
         const adults = total - kids;
         const newCount = att.filter(a => a.isNew).length;
         const parts = [];
-        if (adults > 0) parts.push(`${adults} Adult${adults !== 1 ? 's' : ''}`);
-        if (kids > 0) parts.push(`${kids} Kid${kids !== 1 ? 's' : ''}`);
-        if (newCount > 0) parts.push(`${newCount} New`);
-        badge.innerHTML = `${total} in<span class="badge-sub">${parts.join(' · ')}</span>`;
+        if (adults > 0) parts.push(t('adults', adults, adults !== 1 ? 's' : ''));
+        if (kids > 0) parts.push(t('kids', kids, kids !== 1 ? 's' : ''));
+        if (newCount > 0) parts.push(t('new_people', newCount));
+        badge.innerHTML = `${t('checked_in', total)}<span class="badge-sub">${parts.join(' · ')}</span>`;
     }
 
     function showAttendance() {
         const att = getAttendance();
         const body = document.getElementById('attendance-body');
         if (!att.length) {
-            body.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">No one checked in yet.</div>';
+            body.innerHTML = `<div style="text-align:center;color:var(--text-secondary);padding:20px;">${t('no_attendance')}</div>`;
         } else {
             const newPeople = att.filter(a => a.isNew);
             const kidEntries = att.filter(a => a.isKid && !a.isNew);
             const adultEntries = att.filter(a => !a.isKid && !a.isNew);
             let html = '';
             if (newPeople.length) {
-                html += `<div class="attendance-section"><h3>&#127381; New People (${newPeople.length})</h3>`;
+                html += `<div class="attendance-section"><h3>${t('section_new', newPeople.length)}</h3>`;
                 html += newPeople.map(attendanceRow).join('');
                 html += '</div>';
             }
             if (adultEntries.length) {
-                html += `<div class="attendance-section"><h3>Adults (${adultEntries.length})</h3>`;
+                html += `<div class="attendance-section"><h3>${t('section_adults', adultEntries.length)}</h3>`;
                 html += adultEntries.map(attendanceRow).join('');
                 html += '</div>';
             }
             if (kidEntries.length) {
-                html += `<div class="attendance-section"><h3>&#129490; Kids (${kidEntries.length})</h3>`;
+                html += `<div class="attendance-section"><h3>${t('section_kids', kidEntries.length)}</h3>`;
                 html += kidEntries.map(attendanceRow).join('');
                 html += '</div>';
             }
@@ -3458,12 +3667,15 @@ function doGet(e) {
         const adults = total - kids;
         const newCount = att.filter(a => a.isNew).length;
         const subParts = [];
-        if (adults > 0) subParts.push(`${adults} Adult${adults !== 1 ? 's' : ''}`);
-        if (kids > 0) subParts.push(`${kids} Kid${kids !== 1 ? 's' : ''}`);
-        if (newCount > 0) subParts.push(`${newCount} New`);
+        if (adults > 0) subParts.push(t('adults', adults, adults !== 1 ? 's' : ''));
+        if (kids > 0) subParts.push(t('kids', kids, kids !== 1 ? 's' : ''));
+        if (newCount > 0) subParts.push(t('new_people', newCount));
         const subtitle = subParts.join(' · ');
+        const dateStr = currentLang === 'zh'
+            ? `${d.getMonth()+1}月${d.getDate()}日`
+            : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         document.getElementById('attendance-title').textContent =
-            `Attendance ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${total} (${subtitle})`;
+            `${t('attendance_title')} ${dateStr} — ${total} (${subtitle})`;
         document.getElementById('attendance-overlay').classList.add('active');
     }
 
@@ -3517,7 +3729,7 @@ function doGet(e) {
     function createNewTag() {
         const cn = document.getElementById('new-chinese').value.trim();
         const en = document.getElementById('new-english').value.trim();
-        if (!cn && !en) { toast('Enter at least one name'); return; }
+        if (!cn && !en) { toast(t('enter_one_name')); return; }
         const id = `${cn}|${en}`.toLowerCase();
         const existsInSystem = people.some(p => p.id === id);
         selectedPerson = { id, chinese: cn, english: en, service: '', _isNew: !existsInSystem };
@@ -3557,12 +3769,12 @@ function doGet(e) {
         if (devName !== getDeviceName()) { setDeviceName(devName); sendHeartbeat(); }
         localStorage.setItem('thrive_print_quality', quality);
         closeModalDirect('settings-overlay');
-        toast('Settings saved');
+        toast(t('settings_saved'));
     }
 
     function copyScript() {
         navigator.clipboard.writeText(document.getElementById('script-code').textContent)
-            .then(() => toast('Copied'));
+            .then(() => toast(t('copied')));
     }
 
     // ============================================================
@@ -3747,10 +3959,10 @@ function doGet(e) {
         const newEn = document.getElementById(`edit-en-${idx}`).value.trim();
         const newGrp = document.getElementById(`edit-grp-${idx}`).value.trim();
         const newKid = document.getElementById(`edit-kid-${idx}`).checked;
-        if (!newCn && !newEn) { toast('Enter at least one name'); return; }
+        if (!newCn && !newEn) { toast(t('enter_one_name')); return; }
 
         const url = getScriptUrl();
-        if (!url) { toast('Set Apps Script URL in Settings first'); return; }
+        if (!url) { toast(t('script_url_set')); return; }
 
         const status = document.getElementById('manage-status');
         status.style.display = 'block';
@@ -3797,7 +4009,7 @@ function doGet(e) {
         if (!confirm(`Delete "${display}"?`)) return;
 
         const url = getScriptUrl();
-        if (!url) { toast('Set Apps Script URL in Settings first'); return; }
+        if (!url) { toast(t('script_url_set')); return; }
 
         const status = document.getElementById('manage-status');
         status.style.display = 'block';
@@ -3833,10 +4045,10 @@ function doGet(e) {
         const cn = document.getElementById('add-chinese').value.trim();
         const en = document.getElementById('add-english').value.trim();
         const grp = document.getElementById('add-group').value.trim();
-        if (!cn && !en) { toast('Enter at least one name'); return; }
+        if (!cn && !en) { toast(t('enter_one_name')); return; }
 
         const url = getScriptUrl();
-        if (!url) { toast('Set Apps Script URL in Settings first'); return; }
+        if (!url) { toast(t('script_url_set')); return; }
 
         const status = document.getElementById('manage-status');
         status.style.display = 'block';
@@ -3883,7 +4095,7 @@ function doGet(e) {
         if (!confirm('This will create a "Master List" tab in your Google Sheet combining form responses + Excel data + family groupings, removing duplicates. Continue?')) return;
 
         const url = getScriptUrl();
-        if (!url) { toast('Set Apps Script URL in Settings first'); return; }
+        if (!url) { toast(t('script_url_set')); return; }
 
         const btn = document.getElementById('init-master-btn');
         const status = document.getElementById('manage-status');
@@ -3928,7 +4140,7 @@ function doGet(e) {
     async function refreshManageList() {
         await loadMasterNames();
         renderManageList();
-        toast('Refreshed');
+        toast(t('refreshed'));
     }
 
     // ============================================================
@@ -4013,7 +4225,7 @@ function doGet(e) {
     // ADMIN VIEWS (Audit Log + Device List)
     // ============================================================
     async function showAuditLog() {
-        if (!isAdminSession()) { toast('Admin access required'); return; }
+        if (!isAdminSession()) { toast(t('admin_required')); return; }
         document.getElementById('audit-overlay').classList.add('active');
         const body = document.getElementById('audit-body');
         body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading audit log...</div>';
@@ -4070,7 +4282,7 @@ function doGet(e) {
     }
 
     async function showDeviceList() {
-        if (!isAdminSession()) { toast('Admin access required'); return; }
+        if (!isAdminSession()) { toast(t('admin_required')); return; }
         document.getElementById('devices-overlay').classList.add('active');
         const body = document.getElementById('devices-body');
         body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading devices...</div>';
@@ -4113,6 +4325,7 @@ function doGet(e) {
     // ============================================================
     // START
     // ============================================================
+    applyLanguage(); // Apply language before init (for lock screen)
     init();
     </script>
 </body>
