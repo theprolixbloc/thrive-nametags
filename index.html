@@ -1041,8 +1041,8 @@
                 </div>
                 <div class="setting-row">
                     <label>Device Name</label>
-                    <input type="text" id="setting-device-name" placeholder="e.g. iPad-Front-Desk">
-                    <div class="hint">Identify this device in the admin panel.</div>
+                    <input type="text" id="setting-device-name" placeholder="">
+                    <div class="hint">Auto-detected. Override with owner's name (e.g. "Patrick's iPad") to identify this device.</div>
                 </div>
                 <div class="setting-row">
                     <label>BLE Service UUID</label>
@@ -1470,7 +1470,31 @@ function doGet(e) {
         }
         return id;
     }
-    function getDeviceName() { return localStorage.getItem('thrive_device_name') || ''; }
+    function detectDeviceType() {
+        const ua = navigator.userAgent;
+        if (/iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'iPad';
+        if (/iPhone/.test(ua)) return 'iPhone';
+        if (/Android/.test(ua) && /Mobile/.test(ua)) return 'Android';
+        if (/Android/.test(ua)) return 'Android-Tablet';
+        if (/Macintosh/.test(ua)) return 'Mac';
+        if (/Windows/.test(ua)) return 'Windows';
+        if (/CrOS/.test(ua)) return 'Chromebook';
+        return 'Device';
+    }
+    function generateDeviceId() {
+        let id = localStorage.getItem('thrive_device_uid');
+        if (!id) {
+            id = Math.random().toString(16).slice(2, 5).toUpperCase();
+            localStorage.setItem('thrive_device_uid', id);
+        }
+        return id;
+    }
+    function getDefaultDeviceName() {
+        return `${detectDeviceType()}-${generateDeviceId()}`;
+    }
+    function getDeviceName() {
+        return localStorage.getItem('thrive_device_name') || getDefaultDeviceName();
+    }
     function setDeviceName(name) { localStorage.setItem('thrive_device_name', name); }
 
     // ============================================================
@@ -1627,7 +1651,9 @@ function doGet(e) {
         // Show the active script URL in settings (custom override or default)
         document.getElementById('script-url').value = localStorage.getItem('thrive_script_url') || '';
         document.getElementById('setting-service-uuid').value = BLE.config.serviceUuid;
-        document.getElementById('setting-device-name').value = getDeviceName();
+        const devNameInput = document.getElementById('setting-device-name');
+        devNameInput.value = localStorage.getItem('thrive_device_name') || '';
+        devNameInput.placeholder = getDefaultDeviceName();
         updatePrinterModeUI();
 
         // Start print queue listener if printer mode was left on (BLE will auto-enable it)
