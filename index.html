@@ -2708,18 +2708,34 @@
             chunks++;
         }
 
-        // Send a separate END command after a brief pause to ensure printer terminates cleanly
-        await new Promise(r => setTimeout(r, 200));
-        const endCmd = new TextEncoder().encode('END\r\n');
-        if (noResp) await BLE.writeChar.writeValueWithoutResponse(endCmd);
-        else await BLE.writeChar.writeValue(endCmd);
-
         const elapsed = performance.now() - t0;
         const kbps = (buf.length / 1024 / (elapsed / 1000)).toFixed(1);
         console.log(`[BLE] ${buf.length} bytes, ${elapsed.toFixed(0)}ms, ${chunks} chunks, ${kbps} KB/s, ${noResp ? 'writeNoResp' : 'writeWithResp'}`);
+
+        // NUCLEAR FIX: disconnect BLE after print to force printer to stop,
+        // then auto-reconnect. This prevents the Nelko firmware from looping.
+        schedulePostPrintDisconnect();
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // Post-print disconnect: wait for the label to finish feeding, then
+    // briefly disconnect BLE to flush the printer's command buffer.
+    // The auto-reconnect handler will restore the connection in ~2 seconds.
+    let _postPrintTimer = null;
+    function schedulePostPrintDisconnect() {
+        clearTimeout(_postPrintTimer);
+        _postPrintTimer = setTimeout(() => {
+            if (!BLE.device?.gatt?.connected) return;
+            console.log('[BLE] Post-print disconnect to flush printer buffer');
+            printDebug('🔌 Post-print disconnect (flush buffer)');
+            // Don't set intentionalDisconnect — allow auto-reconnect
+            intentionalDisconnect = false;
+            reconnectAttempts = 0;
+            BLE.device.gatt.disconnect();
+            // The gattserverdisconnected event handler will trigger auto-reconnect
+        }, 3000); // 3 seconds — enough for the label to finish feeding
+    }
 
     // ============================================================
     // PRINT ACTIONS
