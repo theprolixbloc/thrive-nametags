@@ -2494,7 +2494,8 @@
                 `SPEED ${pq.speed}\r\n` +
                 `DENSITY ${pq.density}\r\n` +
                 `CLS\r\n` +
-                `TEXT ${x},${y},"4",0,${mult},${mult},"${english}"\r\n`;
+                `TEXT ${x},${y},"4",0,${mult},${mult},"${english}"\r\n` +
+                `PRINT 1,1\r\n`;
             console.log('[TSPL2-TEXT]', cmds.length, 'bytes, font 4 mult', mult);
             return enc.encode(cmds);
         }
@@ -2562,8 +2563,7 @@
             enCmd = `TEXT ${enX},${enYpos},"4",0,${mult},${mult},"${english}"\r\n`;
         }
 
-        // No PRINT here — sendToPrinter sends PRINT separately after a delay
-        const footer = enc.encode(enCmd || '');
+        const footer = enc.encode(`${enCmd || ''}PRINT 1,1\r\n`);
         const totalLen = header.length + bitmapData.length + footer.length;
         const cmd = new Uint8Array(totalLen);
         cmd.set(header, 0);
@@ -2620,8 +2620,7 @@
         // Extract bitmap data for content rows
         const bitmapData = inverted.subarray(firstRow * bytesPerLine, (lastRow + 1) * bytesPerLine);
 
-        // No PRINT here — sendToPrinter sends PRINT separately after a delay
-        const footer = new Uint8Array(0);
+        const footer = enc.encode(`PRINT 1,1\r\n`);
 
         // Combine into single buffer
         const totalLen = header.length + bitmapData.length + footer.length;
@@ -2708,19 +2707,24 @@
             for (const p of data) { buf.set(p, off); off += p.length; }
         }
 
-        // Send the label setup + bitmap data (everything BEFORE "PRINT")
+        // Send label data in chunks
         await bleWrite(buf);
-
-        // Wait for printer to fully process the bitmap data before sending PRINT
-        await sleep(300);
-
-        // Send PRINT command as a separate BLE write
-        const enc = new TextEncoder();
-        await bleWrite(enc.encode('PRINT 1,1\r\n'));
 
         const elapsed = performance.now() - t0;
         const kbps = (buf.length / 1024 / (elapsed / 1000)).toFixed(1);
         console.log(`[BLE] ${buf.length} bytes, ${elapsed.toFixed(0)}ms, ${kbps} KB/s`);
+
+        // After print data is fully sent, wait for label to feed then
+        // send CLS to clear the printer buffer and prevent re-execution
+        setTimeout(async () => {
+            try {
+                if (BLE.writeChar) {
+                    const enc = new TextEncoder();
+                    await bleWrite(enc.encode('CLS\r\n'));
+                    printDebug('🧹 Sent post-print CLS to clear buffer');
+                }
+            } catch {}
+        }, 2000);
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
