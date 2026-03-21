@@ -1356,8 +1356,6 @@ function doGet(e) {
     // ============================================================
     // CONFIG
     // ============================================================
-    const SHEET_ID = '1emTIXAFHBae-r6Zo3W48I_PBSMuPjC25dPnmNptz-bg';
-    const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
     const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyhxVhAjcf0Z60yP3xrMYgqXoFMTjyV9rD4ApsBfH9SUWU0PbN2XKKlezkPSIOiax8Y/exec';
     const LABEL_W = 609;  // 3" at 203 DPI
     const LABEL_H = 406;  // 2" at 203 DPI
@@ -1365,7 +1363,7 @@ function doGet(e) {
     const ENGLISH_FONT = '"Inter", -apple-system, BlinkMacSystemFont, sans-serif';
     const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const HAS_BLE = !!navigator.bluetooth;
-    const ATTENDANCE_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Attendance`;
+    // All data reads go through Apps Script (no direct Google Sheet access)
 
     // ============================================================
     // i18n — Bilingual UI (English / Traditional Chinese)
@@ -1692,6 +1690,16 @@ function doGet(e) {
         return localStorage.getItem('thrive_script_url') || DEFAULT_SCRIPT_URL;
     }
 
+    // Secure data fetch — all reads go through Apps Script (not direct sheet URLs)
+    async function fetchFromScript(action, params) {
+        const url = getScriptUrl();
+        if (!url) throw new Error('No script URL configured');
+        const query = new URLSearchParams({ action, ...(params || {}) });
+        const resp = await fetch(`${url}?${query.toString()}`);
+        if (!resp.ok) throw new Error(`Script fetch failed: ${resp.status}`);
+        return resp.json();
+    }
+
     // Device Identity
     function getDeviceId() {
         let id = localStorage.getItem('thrive_device_id');
@@ -1964,34 +1972,39 @@ function doGet(e) {
     // ============================================================
     // DATA LOADING
     // ============================================================
-    const MASTER_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Master+List`;
-
     async function loadPeople() {
         try {
-            // Try Master List tab first
+            // Try Master List via Apps Script
             let usedMaster = false;
             try {
-                const resp = await fetch(MASTER_CSV_URL);
-                if (resp.ok) {
-                    const text = await resp.text();
-                    if (text && text.trim().length > 30 &&
-                        !text.includes('error') &&
-                        !text.toLowerCase().includes('timestamp')) {
-                        const parsed = processMasterRows(parseCSV(text));
-                        if (parsed.length > 0) {
-                            people = parsed;
-                            usedMaster = true;
-                        }
-                    }
+                const data = await fetchFromScript('getMasterList');
+                if (data && data.length > 0) {
+                    people = data.map(r => {
+                        const cn = (r.chinese || '').trim();
+                        const en = (r.english || '').trim();
+                        const svc = (r.service || '').trim();
+                        const grp = (r.group || '').trim();
+                        const kid = r.kid === true || r.kid === 'Y';
+                        let service = '';
+                        if (svc.includes('First') || svc.includes('第一') || svc === '1') service = '1';
+                        else if (svc.includes('Second') || svc.includes('第二') || svc === '2') service = '2';
+                        const key = `${cn}|${en}`.toLowerCase();
+                        return { chinese: cn, english: en, service, group: grp, kid, id: key };
+                    }).filter(p => p.chinese || p.english);
+                    usedMaster = true;
                 }
             } catch {}
 
-            // Fallback to form responses
+            // Fallback to form responses via Apps Script
             if (!usedMaster) {
-                const resp = await fetch(CSV_URL);
-                if (!resp.ok) throw new Error('Fetch failed');
-                const text = await resp.text();
-                people = processRows(parseCSV(text));
+                const data = await fetchFromScript('getFormResponses');
+                if (!data || data.length === 0) throw new Error('No data');
+                people = data.map(r => {
+                    const cn = (r.chinese || '').trim();
+                    const en = (r.english || '').trim();
+                    const key = `${cn}|${en}`.toLowerCase();
+                    return { chinese: cn, english: en, service: '', group: '', id: key };
+                }).filter(p => p.chinese || p.english);
             }
 
             // Merge seed data (names from Excel files not yet in the sheet)
@@ -3552,30 +3565,22 @@ function doGet(e) {
     async function fetchRemoteAttendance() {
         try {
             const today = new Date().toISOString().slice(0, 10);
-            const query = encodeURIComponent(`SELECT * WHERE A = '${today}'`);
-            const url = `${ATTENDANCE_CSV_URL}&tq=${query}`;
-            const resp = await fetch(url);
-            if (!resp.ok) return;
-            const text = await resp.text();
-            if (!text || text.trim().length < 20) return;
-            const rows = parseCSV(text);
-            if (rows.length < 2) return;
+            const data = await fetchFromScript('getAttendance', { date: today });
+            if (!data || data.length === 0) return;
 
             const remote = [];
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (row.length < 5) continue;
-                const personId = row.length >= 9 ? (row[8] || '').toLowerCase() : '';
-                const id = personId || `${(row[2]||'')}|${(row[3]||'')}`.toLowerCase();
+            for (const r of data) {
+                const personId = (r.personId || '').toLowerCase();
+                const id = personId || `${(r.chinese||'')}|${(r.english||'')}`.toLowerCase();
                 if (!id || id === '|') continue;
                 remote.push({
                     id: id,
-                    chinese: row[2] || '',
-                    english: row[3] || '',
-                    time: row[1] || '',
-                    service: row[4] || '',
-                    isKid: (row[5] || '') === 'Y',
-                    isNew: (row[6] || '') === 'Y',
+                    chinese: r.chinese || '',
+                    english: r.english || '',
+                    time: r.time || '',
+                    service: r.service || '',
+                    isKid: r.isKid === true || r.isKid === 'Y',
+                    isNew: r.isNew === true || r.isNew === 'Y',
                 });
             }
             mergeRemoteAttendance(remote);
@@ -3852,28 +3857,14 @@ function doGet(e) {
         list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading...</div>';
 
         try {
-            const resp = await fetch(MASTER_CSV_URL);
-            if (!resp.ok) throw new Error('No Master List tab found');
-            const text = await resp.text();
-            if (!text || text.includes('error') || text.trim().length < 30) {
-                throw new Error('Master List is empty or not set up');
-            }
-            // Detect if Google fell back to Form Responses (has "Timestamp" column)
-            if (text.toLowerCase().includes('timestamp')) {
-                throw new Error('Master List tab not found — got Form Responses instead');
-            }
-            const rows = parseCSV(text);
-            masterNames = [];
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (row.length < 2) continue;
-                const cn = (row[0] || '').trim();
-                const en = (row[1] || '').trim();
-                const svc = (row[2] || '').trim();
-                const grp = (row[3] || '').trim();
-                if (!cn && !en) continue;
-                masterNames.push({ chinese: cn, english: en, service: svc, group: grp });
-            }
+            const data = await fetchFromScript('getMasterList');
+            if (!data || data.length === 0) throw new Error('Master List is empty or not set up');
+            masterNames = data.map(r => ({
+                chinese: (r.chinese || '').trim(),
+                english: (r.english || '').trim(),
+                service: (r.service || '').trim(),
+                group: (r.group || '').trim()
+            })).filter(n => n.chinese || n.english);
             masterNames.sort((a, b) => {
                 const an = (a.english || a.chinese).toLowerCase();
                 const bn = (b.english || b.chinese).toLowerCase();
@@ -4231,34 +4222,18 @@ function doGet(e) {
         body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading audit log...</div>';
 
         try {
-            const auditUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Audit`;
-            const resp = await fetch(auditUrl);
-            if (!resp.ok) throw new Error('No Audit tab');
-            const text = await resp.text();
-            if (!text || text.trim().length < 20 || text.toLowerCase().includes('timestamp,"chinese')) {
-                body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">No audit data yet. Deploy the updated Apps Script to enable audit logging.</div>';
-                return;
-            }
-            const rows = parseCSV(text);
-            if (rows.length < 2) {
+            const data = await fetchFromScript('getAuditLog');
+            if (!data || data.length === 0) {
                 body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">No audit entries.</div>';
                 return;
             }
 
-            // Show most recent first (last 100 rows)
-            const entries = [];
-            for (let i = rows.length - 1; i >= 1 && entries.length < 100; i--) {
-                const r = rows[i];
-                if (r.length < 4) continue;
-                entries.push(r);
-            }
-
             let html = '<table class="admin-table"><thead><tr><th>Time</th><th>Device</th><th>Action</th><th>Details</th></tr></thead><tbody>';
-            for (const r of entries) {
-                const ts = r[0] || '';
-                const dn = r[2] || r[1] || '';
-                const act = r[3] || '';
-                const det = r[4] || '';
+            for (const r of data) {
+                const ts = r.timestamp || '';
+                const dn = r.deviceName || r.deviceId || '';
+                const act = r.action || '';
+                const det = r.details || '';
                 const shortTs = ts.includes('T') ? ts.slice(5, 16).replace('T', ' ') : ts.slice(0, 16);
                 html += `<tr><td>${escH(shortTs)}</td><td>${escH(dn)}</td><td>${escH(act)}</td><td>${escH(det)}</td></tr>`;
             }
@@ -4288,31 +4263,21 @@ function doGet(e) {
         body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">Loading devices...</div>';
 
         try {
-            const devUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Devices`;
-            const resp = await fetch(devUrl);
-            if (!resp.ok) throw new Error('No Devices tab');
-            const text = await resp.text();
-            if (!text || text.trim().length < 20) {
-                body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">No devices registered yet. Deploy the updated Apps Script to enable device tracking.</div>';
-                return;
-            }
-            const rows = parseCSV(text);
-            if (rows.length < 2) {
+            const data = await fetchFromScript('getDevices');
+            if (!data || data.length === 0) {
                 body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);">No devices registered.</div>';
                 return;
             }
 
             let html = '<table class="admin-table"><thead><tr><th>Name</th><th>Type</th><th>Last Seen</th><th>First Seen</th></tr></thead><tbody>';
-            for (let i = 1; i < rows.length; i++) {
-                const r = rows[i];
-                if (r.length < 4) continue;
-                const name = r[1] || r[0]?.slice(0, 12) || '?';
-                const type = parseUserAgent(r[2] || '');
-                const lastSeen = r[3] || '';
-                const firstSeen = r[4] || '';
+            for (const r of data) {
+                const name = r.deviceName || (r.deviceId || '?').slice(0, 12);
+                const type = parseUserAgent(r.userAgent || '');
+                const lastSeen = r.lastSeen || '';
+                const firstSeen = r.firstSeen || '';
                 const shortLast = lastSeen.includes('T') ? lastSeen.slice(5, 16).replace('T', ' ') : lastSeen;
                 const shortFirst = firstSeen.includes('T') ? firstSeen.slice(5, 16).replace('T', ' ') : firstSeen;
-                const isThis = r[0] === getDeviceId();
+                const isThis = r.deviceId === getDeviceId();
                 html += `<tr${isThis ? ' style="background:var(--success-bg);"' : ''}><td>${escH(name)}${isThis ? ' (this)' : ''}</td><td>${escH(type)}</td><td>${escH(shortLast)}</td><td>${escH(shortFirst)}</td></tr>`;
             }
             html += '</tbody></table>';
