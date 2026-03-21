@@ -2737,8 +2737,8 @@
         // CRITICAL: Disconnect immediately after print to stop Nelko firmware loop.
         // The Nelko PL70e re-executes the print buffer while BLE stays connected.
         // Brief disconnect clears the loop; fast reconnect restores connection.
-        printDebug('⏳ Waiting 1.5s for label feed...');
-        await sleep(1500);
+        printDebug('⏳ Waiting 3s for printer to process + feed...');
+        await sleep(3000);
         printCycleDisconnect = true; // Suppress auto-reconnect handler
         try {
             printDebug('🔌 Disconnecting to stop printer loop...');
