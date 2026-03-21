@@ -1408,7 +1408,7 @@
     let people = [];
     let selectedPerson = null;
     let serviceFilter = 'all';
-    let statusFilter = 'active';  // 'active', 'all', 'inactive'
+    let statusFilter = 'all';  // 'active', 'all', 'inactive'
     const SERVICE_CUTOFF_HOUR = 10; // Cutoff: 10:45 AM
     const SERVICE_CUTOFF_MIN = 45;
 
@@ -1882,9 +1882,9 @@
 
     function applyInactiveFlags() {
         const activeIds = getRecentActiveIds(4);
-        // If no attendance data exists yet, treat everyone as active
-        // (avoids marking everyone inactive on a fresh install)
-        if (activeIds.size === 0) {
+        // Need at least 10 unique people across 4 Sundays before flagging inactive
+        // (avoids marking everyone inactive from sparse test data)
+        if (activeIds.size < 10) {
             for (const p of people) p.inactive = false;
             return;
         }
