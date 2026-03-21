@@ -2490,11 +2490,12 @@
                 `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
                 `GAP 3 mm,0 mm\r\n` +
                 `DIRECTION 0,0\r\n` +
+                `SET TEAR ON\r\n` +
                 `SPEED ${pq.speed}\r\n` +
                 `DENSITY ${pq.density}\r\n` +
                 `CLS\r\n` +
                 `TEXT ${x},${y},"4",0,${mult},${mult},"${english}"\r\n` +
-                `PRINT 1\r\n`;
+                `PRINT 1,1\r\nEND\r\n`;
             console.log('[TSPL2-TEXT]', cmds.length, 'bytes, font 4 mult', mult);
             return enc.encode(cmds);
         }
@@ -2544,6 +2545,7 @@
             `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
             `GAP 3 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
+            `SET TEAR ON\r\n` +
             `SPEED ${pq.speed}\r\n` +
             `DENSITY ${pq.density}\r\n` +
             `CLS\r\n` +
@@ -2561,7 +2563,8 @@
             enCmd = `TEXT ${enX},${enYpos},"4",0,${mult},${mult},"${english}"\r\n`;
         }
 
-        const footer = enc.encode(`\r\n${enCmd}PRINT 1\r\n`);
+        // No \r\n between bitmap data and next command
+        const footer = enc.encode(`${enCmd}PRINT 1,1\r\nEND\r\n`);
         const totalLen = header.length + bitmapData.length + footer.length;
         const cmd = new Uint8Array(totalLen);
         cmd.set(header, 0);
@@ -2608,6 +2611,7 @@
             `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
             `GAP 3 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
+            `SET TEAR ON\r\n` +
             `SPEED ${pq.speed}\r\n` +
             `DENSITY ${pq.density}\r\n` +
             `CLS\r\n` +
@@ -2617,7 +2621,8 @@
         // Extract bitmap data for content rows
         const bitmapData = inverted.subarray(firstRow * bytesPerLine, (lastRow + 1) * bytesPerLine);
 
-        const footer = enc.encode(`\r\nPRINT 1\r\n`);
+        // No \r\n between bitmap data and PRINT — printer reads exact byte count then expects next command
+        const footer = enc.encode(`PRINT 1,1\r\nEND\r\n`);
 
         // Combine into single buffer
         const totalLen = header.length + bitmapData.length + footer.length;
@@ -2701,8 +2706,13 @@
             if (noResp) await BLE.writeChar.writeValueWithoutResponse(chunk);
             else await BLE.writeChar.writeValue(chunk);
             chunks++;
-            // No explicit delay — the await provides natural backpressure
         }
+
+        // Send a separate END command after a brief pause to ensure printer terminates cleanly
+        await new Promise(r => setTimeout(r, 200));
+        const endCmd = new TextEncoder().encode('END\r\n');
+        if (noResp) await BLE.writeChar.writeValueWithoutResponse(endCmd);
+        else await BLE.writeChar.writeValue(endCmd);
 
         const elapsed = performance.now() - t0;
         const kbps = (buf.length / 1024 / (elapsed / 1000)).toFixed(1);
