@@ -2490,7 +2490,6 @@
                 `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
                 `GAP 3 mm,0 mm\r\n` +
                 `DIRECTION 0,0\r\n` +
-                `SET TEAR ON\r\n` +
                 `SPEED ${pq.speed}\r\n` +
                 `DENSITY ${pq.density}\r\n` +
                 `CLS\r\n` +
@@ -2668,9 +2667,16 @@
         el.scrollTop = el.scrollHeight;
     }
 
+    // BLE write counter — visible in debug panel to distinguish app re-sends vs printer firmware loops
+    let _bleWriteCount = 0;
+    let _bleTotalBytes = 0;
+
     // Low-level BLE write: send a Uint8Array in chunks
     async function bleWrite(buf) {
         if (!BLE.writeChar) throw new Error('Printer not connected');
+        _bleWriteCount++;
+        _bleTotalBytes += buf.length;
+        printDebug(`🔵 bleWrite #${_bleWriteCount} (${buf.length} bytes, total ${_bleTotalBytes})`);
         const noResp = BLE.writeChar.properties.writeWithoutResponse;
         const CHUNK = noResp ? 512 : 200;
         for (let off = 0; off < buf.length; off += CHUNK) {
@@ -2682,16 +2688,6 @@
 
     async function sendToPrinter(data) {
         if (!BLE.writeChar) throw new Error('Printer not connected');
-
-        // Duplicate detection: block identical data sent within 10 seconds
-        const now = Date.now();
-        const hash = data.length + '-' + (data[0] || 0) + '-' + (data[100] || 0) + '-' + (data[data.length - 1] || 0);
-        if (hash === lastPrintHash && (now - lastPrintTime) < 10000) {
-            printDebug(`⛔ BLOCKED duplicate (same data within ${Math.round((now - lastPrintTime)/1000)}s)`);
-            return;
-        }
-        lastPrintHash = hash;
-        lastPrintTime = now;
 
         const caller = new Error().stack?.split('\n')[2]?.trim() || 'unknown';
         printDebug(`📤 sendToPrinter (${data.length || data.reduce?.((s,p)=>s+p.length,0)} bytes) from: ${caller.slice(-60)}`);
@@ -2713,18 +2709,6 @@
         const elapsed = performance.now() - t0;
         const kbps = (buf.length / 1024 / (elapsed / 1000)).toFixed(1);
         console.log(`[BLE] ${buf.length} bytes, ${elapsed.toFixed(0)}ms, ${kbps} KB/s`);
-
-        // After print data is fully sent, wait for label to feed then
-        // send CLS to clear the printer buffer and prevent re-execution
-        setTimeout(async () => {
-            try {
-                if (BLE.writeChar) {
-                    const enc = new TextEncoder();
-                    await bleWrite(enc.encode('CLS\r\n'));
-                    printDebug('🧹 Sent post-print CLS to clear buffer');
-                }
-            } catch {}
-        }, 2000);
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
