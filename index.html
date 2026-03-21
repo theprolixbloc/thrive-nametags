@@ -2495,7 +2495,7 @@
                 `DENSITY ${pq.density}\r\n` +
                 `CLS\r\n` +
                 `TEXT ${x},${y},"4",0,${mult},${mult},"${english}"\r\n` +
-                `PRINT 1,1\r\n`;
+                `PRINT 1,1\r\nEND\r\n`;
             console.log('[TSPL2-TEXT]', cmds.length, 'bytes, font 4 mult', mult);
             return enc.encode(cmds);
         }
@@ -2563,7 +2563,7 @@
             enCmd = `TEXT ${enX},${enYpos},"4",0,${mult},${mult},"${english}"\r\n`;
         }
 
-        const footer = enc.encode(`${enCmd || ''}PRINT 1,1\r\n`);
+        const footer = enc.encode(`${enCmd || ''}PRINT 1,1\r\nEND\r\n`);
         const totalLen = header.length + bitmapData.length + footer.length;
         const cmd = new Uint8Array(totalLen);
         cmd.set(header, 0);
@@ -2620,7 +2620,7 @@
         // Extract bitmap data for content rows
         const bitmapData = inverted.subarray(firstRow * bytesPerLine, (lastRow + 1) * bytesPerLine);
 
-        const footer = enc.encode(`PRINT 1,1\r\n`);
+        const footer = enc.encode(`PRINT 1,1\r\nEND\r\n`);
 
         // Combine into single buffer
         const totalLen = header.length + bitmapData.length + footer.length;
@@ -2734,27 +2734,7 @@
         const kbps = (buf.length / 1024 / (elapsed / 1000)).toFixed(1);
         console.log(`[BLE] ${buf.length} bytes, ${elapsed.toFixed(0)}ms, ${kbps} KB/s`);
 
-        // NELKO FIRMWARE BUG: printer loops the print buffer while BLE connected.
-        // Only BLE disconnect stops it, but disconnect too early kills the print.
-        // Wait 6s for the first print to fully complete, then disconnect + reconnect.
-        printDebug('⏳ Waiting 6s for print to complete before disconnect...');
-        await sleep(6000);
-        printCycleDisconnect = true;
-        try {
-            printDebug('🔌 Disconnecting to stop loop...');
-            BLE.connected = false;
-            BLE.writeChar = null;
-            BLE.device.gatt.disconnect();
-            await sleep(500);
-            await fastReconnect();
-            printDebug('✅ Print cycle complete');
-        } catch (e) {
-            printDebug('⚠️ Reconnect failed: ' + (e?.message || ''));
-            printCycleDisconnect = false;
-            autoReconnectBLE();
-            return;
-        }
-        printCycleDisconnect = false;
+        // END command in the TSPL2 data should terminate the print job properly.
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
