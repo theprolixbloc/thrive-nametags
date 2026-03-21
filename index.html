@@ -2734,27 +2734,35 @@
         const kbps = (buf.length / 1024 / (elapsed / 1000)).toFixed(1);
         console.log(`[BLE] ${buf.length} bytes, ${elapsed.toFixed(0)}ms, ${kbps} KB/s`);
 
-        // CRITICAL: Disconnect immediately after print to stop Nelko firmware loop.
-        // The Nelko PL70e re-executes the print buffer while BLE stays connected.
-        // Brief disconnect clears the loop; fast reconnect restores connection.
-        printDebug('⏳ Waiting 3s for printer to process + feed...');
-        await sleep(3000);
-        printCycleDisconnect = true; // Suppress auto-reconnect handler
-        try {
-            printDebug('🔌 Disconnecting to stop printer loop...');
-            BLE.connected = false;
-            BLE.writeChar = null;
-            BLE.device.gatt.disconnect();
-            await sleep(300); // Brief pause for disconnect to take effect
-            await fastReconnect();
-        } catch (e) {
-            printDebug('⚠️ Fast reconnect failed: ' + (e?.message || ''));
-            // Fall back to normal auto-reconnect
-            printCycleDisconnect = false;
-            autoReconnectBLE();
-            return;
-        }
-        printCycleDisconnect = false;
+        // After print data is sent, wait for the label to print, then send
+        // a full reinitialize sequence to clear the buffer and stop the Nelko
+        // firmware from looping. SIZE+GAP+CLS resets the label format and
+        // clears the image buffer without triggering another print.
+        const widthMM = (LABEL_W / 203 * 25.4).toFixed(1);
+        const heightMM = (LABEL_H / 203 * 25.4).toFixed(1);
+        const resetCmd = new TextEncoder().encode(
+            `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
+            `GAP 3 mm,0 mm\r\n` +
+            `CLS\r\n`
+        );
+        // Send reset after 2s (enough time for label to feed)
+        setTimeout(async () => {
+            try {
+                if (BLE.writeChar) {
+                    await bleWrite(resetCmd);
+                    printDebug('🧹 Sent SIZE+GAP+CLS reset to stop loop');
+                }
+            } catch {}
+        }, 2000);
+        // Send another reset at 4s as safety net
+        setTimeout(async () => {
+            try {
+                if (BLE.writeChar) {
+                    await bleWrite(resetCmd);
+                    printDebug('🧹 Sent 2nd reset at 4s');
+                }
+            } catch {}
+        }, 4000);
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
