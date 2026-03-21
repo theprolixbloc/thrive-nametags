@@ -2273,7 +2273,7 @@
                 BLE.connected = false;
                 BLE.writeChar = null;
                 showDisconnectBtn(false);
-                if (intentionalDisconnect) return; // User tapped Disconnect — don't auto-reconnect
+                if (intentionalDisconnect || printCycleDisconnect) return; // Don't auto-reconnect during print cycle or user disconnect
                 dot.classList.remove('connected');
                 dot.classList.add('connecting');
                 document.getElementById('printerName').textContent = t('reconnecting');
@@ -2339,6 +2339,7 @@
 
     // Intentional disconnect — clean up and suppress auto-reconnect
     let intentionalDisconnect = false;
+    let printCycleDisconnect = false; // True during send→disconnect→reconnect cycle
 
     function disconnectPrinter() {
         intentionalDisconnect = true;
@@ -2686,6 +2687,29 @@
         }
     }
 
+    // Fast BLE reconnect — reuses existing device, skips UI scan
+    async function fastReconnect() {
+        if (!BLE.device) throw new Error('No device to reconnect');
+        printDebug('🔄 Fast reconnect...');
+        const t0 = performance.now();
+        const server = await BLE.device.gatt.connect();
+        const svc = await server.getPrimaryService(BLE.config.serviceUuid);
+        const chars = await svc.getCharacteristics();
+        let writeChar = null;
+        for (const c of chars) {
+            if (c.properties.writeWithoutResponse || c.properties.write) {
+                if (!writeChar || (c.properties.writeWithoutResponse && !writeChar.properties.writeWithoutResponse)) {
+                    writeChar = c;
+                }
+            }
+        }
+        if (!writeChar) throw new Error('Write characteristic not found');
+        BLE.server = server;
+        BLE.writeChar = writeChar;
+        BLE.connected = true;
+        printDebug(`✅ Reconnected in ${(performance.now() - t0).toFixed(0)}ms`);
+    }
+
     async function sendToPrinter(data) {
         if (!BLE.writeChar) throw new Error('Printer not connected');
 
@@ -2709,6 +2733,28 @@
         const elapsed = performance.now() - t0;
         const kbps = (buf.length / 1024 / (elapsed / 1000)).toFixed(1);
         console.log(`[BLE] ${buf.length} bytes, ${elapsed.toFixed(0)}ms, ${kbps} KB/s`);
+
+        // CRITICAL: Disconnect immediately after print to stop Nelko firmware loop.
+        // The Nelko PL70e re-executes the print buffer while BLE stays connected.
+        // Brief disconnect clears the loop; fast reconnect restores connection.
+        printDebug('⏳ Waiting 1.5s for label feed...');
+        await sleep(1500);
+        printCycleDisconnect = true; // Suppress auto-reconnect handler
+        try {
+            printDebug('🔌 Disconnecting to stop printer loop...');
+            BLE.connected = false;
+            BLE.writeChar = null;
+            BLE.device.gatt.disconnect();
+            await sleep(300); // Brief pause for disconnect to take effect
+            await fastReconnect();
+        } catch (e) {
+            printDebug('⚠️ Fast reconnect failed: ' + (e?.message || ''));
+            // Fall back to normal auto-reconnect
+            printCycleDisconnect = false;
+            autoReconnectBLE();
+            return;
+        }
+        printCycleDisconnect = false;
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
