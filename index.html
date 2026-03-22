@@ -2718,7 +2718,16 @@
 
         const t0 = performance.now();
 
-        // Flatten to single Uint8Array if needed
+        // Step 1: Send a standalone CLS to flush any leftover data in printer buffer
+        // (fixes garbled first print after reconnect or previous job)
+        const enc = new TextEncoder();
+        const widthMM = (LABEL_W / 203 * 25.4).toFixed(1);
+        const heightMM = (LABEL_H / 203 * 25.4).toFixed(1);
+        await bleWrite(enc.encode(`SIZE ${widthMM} mm,${heightMM} mm\r\nGAP 3 mm,0 mm\r\nCLS\r\n`));
+        await sleep(300);
+        printDebug('🧹 Pre-print CLS sent');
+
+        // Step 2: Flatten to single Uint8Array if needed
         let buf = data;
         if (Array.isArray(data)) {
             const total = data.reduce((s, p) => s + p.length, 0);
@@ -2727,14 +2736,32 @@
             for (const p of data) { buf.set(p, off); off += p.length; }
         }
 
-        // Send label data in chunks
+        // Step 3: Send label data in chunks
         await bleWrite(buf);
 
         const elapsed = performance.now() - t0;
         const kbps = (buf.length / 1024 / (elapsed / 1000)).toFixed(1);
-        console.log(`[BLE] ${buf.length} bytes, ${elapsed.toFixed(0)}ms, ${kbps} KB/s`);
+        printDebug(`📤 Data sent: ${buf.length} bytes, ${elapsed.toFixed(0)}ms`);
 
-        // END command in the TSPL2 data should terminate the print job properly.
+        // Step 4: Wait for print to fully complete, then disconnect to stop Nelko loop
+        printDebug('⏳ Waiting 10s for print to complete...');
+        await sleep(10000);
+        printCycleDisconnect = true;
+        try {
+            printDebug('🔌 Disconnecting to stop loop...');
+            BLE.connected = false;
+            BLE.writeChar = null;
+            BLE.device.gatt.disconnect();
+            await sleep(500);
+            await fastReconnect();
+            printDebug('✅ Print cycle complete — ready for next');
+        } catch (e) {
+            printDebug('⚠️ Reconnect failed: ' + (e?.message || ''));
+            printCycleDisconnect = false;
+            autoReconnectBLE();
+            return;
+        }
+        printCycleDisconnect = false;
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
