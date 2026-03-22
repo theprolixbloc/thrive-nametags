@@ -2495,7 +2495,7 @@
                 `DENSITY ${pq.density}\r\n` +
                 `CLS\r\n` +
                 `TEXT ${x},${y},"4",0,${mult},${mult},"${english}"\r\n` +
-                `PRINT 1,1\r\nEND\r\n`;
+                `PRINT 1\r\n`;
             console.log('[TSPL2-TEXT]', cmds.length, 'bytes, font 4 mult', mult);
             return enc.encode(cmds);
         }
@@ -2563,7 +2563,7 @@
             enCmd = `TEXT ${enX},${enYpos},"4",0,${mult},${mult},"${english}"\r\n`;
         }
 
-        const footer = enc.encode(`${enCmd || ''}PRINT 1,1\r\nEND\r\n`);
+        const footer = enc.encode(`${enCmd || ''}PRINT 1\r\n`);
         const totalLen = header.length + bitmapData.length + footer.length;
         const cmd = new Uint8Array(totalLen);
         cmd.set(header, 0);
@@ -2620,7 +2620,7 @@
         // Extract bitmap data for content rows
         const bitmapData = inverted.subarray(firstRow * bytesPerLine, (lastRow + 1) * bytesPerLine);
 
-        const footer = enc.encode(`PRINT 1,1\r\nEND\r\n`);
+        const footer = enc.encode(`PRINT 1\r\n`);
 
         // Combine into single buffer
         const totalLen = header.length + bitmapData.length + footer.length;
