@@ -1882,9 +1882,10 @@
 
     function applyInactiveFlags() {
         const activeIds = getRecentActiveIds(4);
-        // Need at least 10 unique people across 4 Sundays before flagging inactive
-        // (avoids marking everyone inactive from sparse test data)
-        if (activeIds.size < 10) {
+        // Need at least 30% of all people seen in last 4 Sundays before flagging
+        // (avoids marking everyone inactive from sparse or test data)
+        const minActive = Math.max(20, Math.floor(people.length * 0.3));
+        if (activeIds.size < minActive) {
             for (const p of people) p.inactive = false;
             return;
         }
@@ -2737,8 +2738,8 @@
         printDebug(`📤 Data sent: ${buf.length} bytes, ${elapsed.toFixed(0)}ms`);
 
         // Wait for print to fully complete, then disconnect to stop Nelko loop
-        printDebug('⏳ Waiting 10s for print to complete...');
-        await sleep(10000);
+        printDebug('⏳ Waiting 5s for print to complete...');
+        await sleep(5000);
         printCycleDisconnect = true;
         try {
             printDebug('🔌 Disconnecting to stop loop...');
