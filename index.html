@@ -2496,10 +2496,7 @@
                 `DENSITY ${pq.density}\r\n` +
                 `CLS\r\n` +
                 `TEXT ${x},${y},"4",0,${mult},${mult},"${english}"\r\n` +
-                `PRINT 1\r\n` +
-                `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
-                `GAP 3 mm,0 mm\r\n` +
-                `CLS\r\n`;
+                `PRINT 1\r\n`;
             console.log('[TSPL2-TEXT]', cmds.length, 'bytes, font 4 mult', mult);
             return enc.encode(cmds);
         }
@@ -2623,14 +2620,8 @@
         // Extract bitmap data for content rows
         const bitmapData = inverted.subarray(firstRow * bytesPerLine, (lastRow + 1) * bytesPerLine);
 
-        // After PRINT: set up a blank label so if the printer loops,
-        // it loops on an empty CLS'd buffer (prints nothing)
-        const footer = enc.encode(
-            `PRINT 1\r\n` +
-            `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
-            `GAP 3 mm,0 mm\r\n` +
-            `CLS\r\n`
-        );
+        // \r\n after bitmap data terminates the BITMAP command before PRINT
+        const footer = enc.encode(`\r\nPRINT 1\r\n`);
 
         // Combine into single buffer
         const totalLen = header.length + bitmapData.length + footer.length;
@@ -2745,11 +2736,7 @@
         const elapsed = performance.now() - t0;
         printDebug(`📤 Data sent: ${buf.length} bytes, ${elapsed.toFixed(0)}ms`);
 
-        // Immediately overwrite the printer's command buffer with a no-op
-        // to prevent the Nelko firmware from re-executing the print
-        const enc2 = new TextEncoder();
-        await bleWrite(enc2.encode('\r\n\r\n\r\n'));
-        printDebug('🛑 Buffer overwrite sent');
+        printDebug('✅ Print data sent');
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
