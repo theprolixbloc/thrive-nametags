@@ -2719,11 +2719,21 @@
         const caller = new Error().stack?.split('\n')[2]?.trim() || 'unknown';
         printDebug(`📤 sendToPrinter (${data.length || data.reduce?.((s,p)=>s+p.length,0)} bytes) from: ${caller.slice(-60)}`);
 
-        // Clear printer buffer before sending new data (fixes garbled first print after reconnect)
+        // Reset printer parser state before sending new data
+        // Multiple \r\n terminates any partial command from a previous interrupted print
+        // Full SIZE+GAP+CLS reinitializes the label format and clears the image buffer
         const enc = new TextEncoder();
-        await bleWrite(enc.encode('CLS\r\n'));
+        const widthMM = (LABEL_W / 203 * 25.4).toFixed(1);
+        const heightMM = (LABEL_H / 203 * 25.4).toFixed(1);
+        await bleWrite(enc.encode(
+            '\r\n\r\n\r\n' +
+            `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
+            `GAP 3 mm,0 mm\r\n` +
+            `DIRECTION 0,0\r\n` +
+            `CLS\r\n`
+        ));
         await sleep(500);
-        printDebug('🧹 Pre-print CLS sent');
+        printDebug('🧹 Pre-print reset sent');
 
         const t0 = performance.now();
 
@@ -2744,8 +2754,8 @@
         printDebug(`📤 Data sent: ${buf.length} bytes, ${elapsed.toFixed(0)}ms`);
 
         // Wait for print to fully complete, then disconnect to stop Nelko loop
-        printDebug('⏳ Waiting 5s for print to complete...');
-        await sleep(5000);
+        printDebug('⏳ Waiting 8s for print to complete...');
+        await sleep(8000);
         printCycleDisconnect = true;
         try {
             printDebug('🔌 Disconnecting to stop loop...');
