@@ -2719,6 +2719,12 @@
         const caller = new Error().stack?.split('\n')[2]?.trim() || 'unknown';
         printDebug(`📤 sendToPrinter (${data.length || data.reduce?.((s,p)=>s+p.length,0)} bytes) from: ${caller.slice(-60)}`);
 
+        // Clear printer buffer before sending new data (fixes garbled first print after reconnect)
+        const enc = new TextEncoder();
+        await bleWrite(enc.encode('CLS\r\n'));
+        await sleep(500);
+        printDebug('🧹 Pre-print CLS sent');
+
         const t0 = performance.now();
 
         // Flatten to single Uint8Array if needed
