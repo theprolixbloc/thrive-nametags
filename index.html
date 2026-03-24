@@ -2719,22 +2719,6 @@
         const caller = new Error().stack?.split('\n')[2]?.trim() || 'unknown';
         printDebug(`📤 sendToPrinter (${data.length || data.reduce?.((s,p)=>s+p.length,0)} bytes) from: ${caller.slice(-60)}`);
 
-        // Reset printer parser state before sending new data
-        // Multiple \r\n terminates any partial command from a previous interrupted print
-        // Full SIZE+GAP+CLS reinitializes the label format and clears the image buffer
-        const enc = new TextEncoder();
-        const widthMM = (LABEL_W / 203 * 25.4).toFixed(1);
-        const heightMM = (LABEL_H / 203 * 25.4).toFixed(1);
-        await bleWrite(enc.encode(
-            '\r\n\r\n\r\n' +
-            `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
-            `GAP 3 mm,0 mm\r\n` +
-            `DIRECTION 0,0\r\n` +
-            `CLS\r\n`
-        ));
-        await sleep(500);
-        printDebug('🧹 Pre-print reset sent');
-
         const t0 = performance.now();
 
         // Flatten to single Uint8Array if needed
@@ -2750,28 +2734,20 @@
         await bleWrite(buf);
 
         const elapsed = performance.now() - t0;
-        const kbps = (buf.length / 1024 / (elapsed / 1000)).toFixed(1);
         printDebug(`📤 Data sent: ${buf.length} bytes, ${elapsed.toFixed(0)}ms`);
 
-        // Wait for print to fully complete, then disconnect to stop Nelko loop
-        printDebug('⏳ Waiting 8s for print to complete...');
-        await sleep(8000);
-        printCycleDisconnect = true;
-        try {
-            printDebug('🔌 Disconnecting to stop loop...');
-            BLE.connected = false;
-            BLE.writeChar = null;
-            BLE.device.gatt.disconnect();
-            await sleep(500);
-            await fastReconnect();
-            printDebug('✅ Print cycle complete — ready for next');
-        } catch (e) {
-            printDebug('⚠️ Reconnect failed: ' + (e?.message || ''));
-            printCycleDisconnect = false;
-            autoReconnectBLE();
-            return;
-        }
-        printCycleDisconnect = false;
+        // After print data is sent, wait for label to print then
+        // send INITIALPRINTER to factory-reset the printer state.
+        // This stops the Nelko firmware from looping without disconnecting BLE.
+        setTimeout(async () => {
+            try {
+                if (BLE.writeChar) {
+                    const enc = new TextEncoder();
+                    await bleWrite(enc.encode('INITIALPRINTER\r\n'));
+                    printDebug('🔄 INITIALPRINTER sent (stops loop)');
+                }
+            } catch {}
+        }, 3000);
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
