@@ -3166,12 +3166,6 @@
             }, 1000);
         });
 
-        // Poll every 10 seconds as a safety net
-        pendingQueueInterval = setInterval(() => {
-            printDebug('⏰ 10s poll interval');
-            processPendingQueue();
-        }, 10000);
-
         // Process any existing pending jobs once now
         processPendingQueue();
         toast('🖨️ Printer mode active — listening for jobs');
