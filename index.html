@@ -1222,27 +1222,27 @@
         // Print actions
         print:              { en: 'Print', zh: '列印' },
         share:              { en: 'Share', zh: '分享' },
-        queue_print:        { en: '🖨️ Print', zh: '🖨️ 列印' },
+        queue_print:        { en: 'Send to Station', zh: '傳送到列印站' },
         share_nelko:        { en: 'Share to Nelko App', zh: '分享到 Nelko' },
         browser_print:      { en: 'Browser Print', zh: '瀏覽器列印' },
         preview_tag:        { en: 'Preview Tag', zh: '預覽名牌' },
         is_kid:             { en: 'This person is a kid', zh: '此人為兒童' },
         already_printed:    { en: 'Already printed today', zh: '今日已列印' },
-        sending:            { en: 'Sending to printer...', zh: '傳送至印表機⋯' },
+        sending:            { en: 'Sending to print station...', zh: '傳送至列印站⋯' },
         printed:            { en: 'Printed! ({0}s)', zh: '已列印！({0}秒)' },
         print_failed:       { en: 'Print failed: {0}. Try Share instead.', zh: '列印失敗：{0}。請改用分享。' },
-        sent_to_printer:    { en: 'Sent to printer! 🖨️', zh: '已傳送至印表機！🖨️' },
-        send_failed:        { en: 'Failed to send. Try Share instead.', zh: '傳送失敗。請改用分享。' },
+        sent_to_printer:    { en: 'Sent to print station! 🖨️', zh: '已傳送至列印站！🖨️' },
+        send_failed:        { en: 'Failed to send to print station. Try Share instead.', zh: '傳送到列印站失敗。請改用分享。' },
         printing_name:      { en: '🖨️ Printing: {0}...', zh: '🖨️ 列印中：{0}⋯' },
         print_done:         { en: '✓ Printed: {0}', zh: '✓ 已列印：{0}' },
         print_fail_name:    { en: 'Print failed: {0}', zh: '列印失敗：{0}' },
         connect_first:      { en: 'Connect printer first', zh: '請先連接印表機' },
-        queue_unavail:      { en: 'Print queue unavailable', zh: '列印佇列無法使用' },
-        queue_send_fail:    { en: 'Failed to send print job', zh: '傳送列印工作失敗' },
+        queue_unavail:      { en: 'Print station queue unavailable', zh: '列印站佇列無法使用' },
+        queue_send_fail:    { en: 'Failed to send job to print station', zh: '傳送工作到列印站失敗' },
         queue_listening:    { en: '🖨️ Printer mode active — listening for jobs', zh: '🖨️ 印表機模式已啟動 — 等待列印工作' },
         queue_empty:        { en: '✓ Queue empty — ready for jobs', zh: '✓ 佇列已清空 — 等待列印' },
         queue_all_done:     { en: '✓ All jobs already processed', zh: '✓ 所有工作已處理' },
-        print_wireless_tip: { en: 'Print job will be sent wirelessly to the printer device.', zh: '列印工作將無線傳送至印表機裝置。' },
+        print_wireless_tip: { en: 'This sends the job to the desktop print station.', zh: '這會把工作傳送到桌面列印站。' },
 
         // Batch print
         print_group:        { en: 'Print {0} ({1})', zh: '列印 {0} ({1})' },
@@ -1469,10 +1469,19 @@
     let lastPrintTime = 0;
 
     // BLE Printer State
+    const ISSC_SERVICE_UUID = '49535343-fe7d-4ae5-8fa9-9fafd205e455';
+    const ISSC_NOTIFY_UUIDS = new Set([
+        '49535343-aca3-481c-91ec-d85e28a60318',
+        '49535343-1e4d-4bd9-ba61-23c647249616',
+    ]);
+
     const BLE = {
         device: null,
         server: null,
         writeChar: null,
+        notifyChars: [],
+        statusBuffer: '',
+        statusResolver: null,
         connected: false,
         config: loadBLEConfig()
     };
@@ -1489,6 +1498,73 @@
             serviceUuid: '000000ff-0000-1000-8000-00805f9b34fb',
             writeUuid: ''
         };
+    }
+
+    function clearBLETransientState() {
+        BLE.notifyChars = [];
+        BLE.statusBuffer = '';
+        BLE.statusResolver = null;
+    }
+
+    function handlePrinterNotification(event) {
+        const value = event?.target?.value;
+        if (!value) return;
+        const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+        const text = new TextDecoder().decode(bytes).replace(/\0/g, '');
+
+        // The PL70e status channel emits short ASCII lines like "READSTA PAPER,\r\n".
+        if (!/^[\x09\x0A\x0D\x20-\x7E]+$/.test(text)) return;
+
+        BLE.statusBuffer += text;
+        const parts = BLE.statusBuffer.split('\r\n');
+        BLE.statusBuffer = parts.pop() || '';
+
+        for (const part of parts) {
+            const line = part.trim();
+            if (!line) continue;
+            printDebug(`📥 ${line}`);
+            if (BLE.statusResolver) {
+                const resolve = BLE.statusResolver;
+                BLE.statusResolver = null;
+                resolve(line);
+            }
+        }
+    }
+
+    async function enablePrinterNotifications(chars) {
+        clearBLETransientState();
+        const notifyChars = chars.filter(c => c.properties.notify && ISSC_NOTIFY_UUIDS.has(c.uuid.toLowerCase()));
+        for (const c of notifyChars) {
+            try { c.removeEventListener('characteristicvaluechanged', handlePrinterNotification); } catch {}
+            await c.startNotifications();
+            c.addEventListener('characteristicvaluechanged', handlePrinterNotification);
+        }
+        BLE.notifyChars = notifyChars;
+    }
+
+    async function waitForPrinterReady(timeoutMs = 1500) {
+        if (!BLE.writeChar || !BLE.notifyChars.length) return true;
+
+        const statusPromise = new Promise(resolve => {
+            const done = line => {
+                clearTimeout(timer);
+                if (BLE.statusResolver === done) BLE.statusResolver = null;
+                resolve(line);
+            };
+            const timer = setTimeout(() => done(null), timeoutMs);
+            BLE.statusResolver = done;
+        });
+
+        await bleWrite(new TextEncoder().encode('READSTA \r\n'));
+        printDebug('📨 READSTA');
+
+        const line = await statusPromise;
+        if (!line) {
+            printDebug('⚠️ READSTA timeout');
+            return true;
+        }
+
+        return /READSTA\s+PAPER/i.test(line);
     }
 
     // Helper: get active script URL (custom override or built-in default)
@@ -2199,6 +2275,7 @@
             // Step 3: Discover services and find writable characteristic
             btn.textContent = 'Finding services...';
             let writeChar = null;
+            let selectedChars = [];
             let foundServices = [];
 
             // First try to enumerate all services (more reliable on some devices)
@@ -2231,6 +2308,7 @@
                             // Prefer writeWithoutResponse (50x faster than write-with-response)
                             if (!writeChar || (c.properties.writeWithoutResponse && !writeChar.properties.writeWithoutResponse)) {
                                 writeChar = c;
+                                selectedChars = chars;
                                 BLE.config.serviceUuid = uuid;
                                 BLE.config.writeUuid = c.uuid;
                                 localStorage.setItem('thrive_ble_config', JSON.stringify(BLE.config));
@@ -2251,6 +2329,7 @@
 
             // Step 4: Connected!
             BLE.writeChar = writeChar;
+            await enablePrinterNotifications(selectedChars);
             BLE.connected = true;
             reconnectAttempts = 0;
             intentionalDisconnect = false;
@@ -2272,7 +2351,9 @@
 
             device.addEventListener('gattserverdisconnected', () => {
                 BLE.connected = false;
+                BLE.server = null;
                 BLE.writeChar = null;
+                clearBLETransientState();
                 showDisconnectBtn(false);
                 if (intentionalDisconnect || printCycleDisconnect) return; // Don't auto-reconnect during print cycle or user disconnect
                 dot.classList.remove('connected');
@@ -2350,7 +2431,9 @@
             BLE.device.gatt.disconnect();
         }
         BLE.connected = false;
+        BLE.server = null;
         BLE.writeChar = null;
+        clearBLETransientState();
         BLE.device = null;
         if (isPrinterMode()) setPrinterMode(false);
 
@@ -2407,7 +2490,9 @@
 
             if (!writeChar) throw new Error('Write characteristic not found');
 
+            BLE.server = server;
             BLE.writeChar = writeChar;
+            await enablePrinterNotifications(chars);
             BLE.connected = true;
             reconnectAttempts = 0;
 
@@ -2492,6 +2577,7 @@
                 `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
                 `GAP 3 mm,0 mm\r\n` +
                 `DIRECTION 0,0\r\n` +
+                `SET TEAR ON\r\n` +
                 `SPEED ${pq.speed}\r\n` +
                 `DENSITY ${pq.density}\r\n` +
                 `CLS\r\n` +
@@ -2575,62 +2661,55 @@
         return cmd;
     }
 
-    // TSPL2 BITMAP mode — sends rendered image as a single BITMAP command
-    // Uses one contiguous BITMAP from first content row to last content row
-    function buildTSPL2Command(bd) {
+    async function compressZlib(buf) {
+        if (typeof CompressionStream === 'undefined') return null;
+        const stream = new Blob([buf]).stream().pipeThrough(new CompressionStream('deflate'));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+
+    // TSPL2 BITMAP mode matching Nelko's direct BLE flow:
+    // READSTA -> ready notification -> BITMAP mode 3 (zlib) -> PRINT 1,1
+    async function buildTSPL2Command(bd) {
         const { bitmap, bytesPerLine, width, height } = bd;
         const enc = new TextEncoder();
-
-        // Invert bitmap: our format has 1=black, TSPL2 needs 0=black/1=white
-        const inverted = new Uint8Array(bitmap.length);
-        for (let i = 0; i < bitmap.length; i++) inverted[i] = bitmap[i] ^ 0xFF;
-
-        // Find vertical content bounds (first and last non-white row)
-        let firstRow = -1, lastRow = -1;
-        for (let y = 0; y < height; y++) {
-            const off = y * bytesPerLine;
-            for (let b = 0; b < bytesPerLine; b++) {
-                if (inverted[off + b] !== 0x00) {
-                    if (firstRow === -1) firstRow = y;
-                    lastRow = y;
-                    break;
-                }
-            }
-        }
-        if (firstRow === -1) { firstRow = 0; lastRow = height - 1; }
-
-        const cropH = lastRow - firstRow + 1;
-
-        // Label dimensions in mm (203 DPI)
         const widthMM = (width / 203 * 25.4).toFixed(1);
         const heightMM = (height / 203 * 25.4).toFixed(1);
-
-        // Build command: single BITMAP command, full width, cropped vertically
         const pq = getPrintQuality();
+
+        let mode = 0;
+        let bitmapPayload = bitmap;
+
+        try {
+            const compressed = await compressZlib(bitmap);
+            if (compressed && compressed.length < bitmap.length) {
+                mode = 3;
+                bitmapPayload = compressed;
+            }
+        } catch (e) {
+            printDebug(`⚠️ Compression failed, using raw BITMAP: ${e?.message || e}`);
+        }
+
+        const bitmapCmd = mode === 3
+            ? `BITMAP 0,0,${bytesPerLine},${height},3,${bitmapPayload.length},`
+            : `BITMAP 0,0,${bytesPerLine},${height},0,`;
+
         const header = enc.encode(
             `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
-            `GAP 3 mm,0 mm\r\n` +
+            `GAP 3.0 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
-            `SPEED ${pq.speed}\r\n` +
             `DENSITY ${pq.density}\r\n` +
             `CLS\r\n` +
-            `BITMAP 0,${firstRow},${bytesPerLine},${cropH},0,`
+            bitmapCmd
         );
+        const footer = enc.encode(`\r\nPRINT 1,1\r\n`);
 
-        // Extract bitmap data for content rows
-        const bitmapData = inverted.subarray(firstRow * bytesPerLine, (lastRow + 1) * bytesPerLine);
-
-        // \r\n after bitmap data terminates the BITMAP command before PRINT
-        const footer = enc.encode(`\r\nPRINT 1\r\n`);
-
-        // Combine into single buffer
-        const totalLen = header.length + bitmapData.length + footer.length;
+        const totalLen = header.length + bitmapPayload.length + footer.length;
         const cmd = new Uint8Array(totalLen);
         cmd.set(header, 0);
-        cmd.set(bitmapData, header.length);
-        cmd.set(footer, header.length + bitmapData.length);
+        cmd.set(bitmapPayload, header.length);
+        cmd.set(footer, header.length + bitmapPayload.length);
 
-        console.log(`[TSPL2] ${totalLen} bytes (1 BITMAP, rows ${firstRow}-${lastRow}, ${bytesPerLine} bytes/row)`);
+        console.log(`[TSPL2] ${totalLen} bytes (${mode === 3 ? 'zlib' : 'raw'} bitmap, ${bytesPerLine}x${height})`);
         return cmd;
     }
 
@@ -2680,13 +2759,12 @@
         _bleTotalBytes += buf.length;
         printDebug(`🔵 bleWrite #${_bleWriteCount} (${buf.length} bytes, total ${_bleTotalBytes})`);
         const noResp = BLE.writeChar.properties.writeWithoutResponse;
-        const CHUNK = 200; // Conservative chunk size to prevent data loss
+        const CHUNK = 182; // Captured PL70e ATT payload with MTU 185
         for (let off = 0; off < buf.length; off += CHUNK) {
             const chunk = buf.subarray(off, Math.min(off + CHUNK, buf.length));
             if (noResp) await BLE.writeChar.writeValueWithoutResponse(chunk);
             else await BLE.writeChar.writeValue(chunk);
-            // Small delay between chunks to let the printer's BLE buffer drain
-            if (off + CHUNK < buf.length) await sleep(15);
+            if (off + CHUNK < buf.length) await sleep(noResp ? 5 : 15);
         }
     }
 
@@ -2709,6 +2787,7 @@
         if (!writeChar) throw new Error('Write characteristic not found');
         BLE.server = server;
         BLE.writeChar = writeChar;
+        await enablePrinterNotifications(chars);
         BLE.connected = true;
         printDebug(`✅ Reconnected in ${(performance.now() - t0).toFixed(0)}ms`);
     }
@@ -2730,13 +2809,13 @@
             for (const p of data) { buf.set(p, off); off += p.length; }
         }
 
-        // Send label data in chunks
+        const ready = await waitForPrinterReady();
+        printDebug(ready ? '✅ Printer ready' : '⚠️ Continuing without ready ACK');
+
         await bleWrite(buf);
 
         const elapsed = performance.now() - t0;
         printDebug(`📤 Data sent: ${buf.length} bytes, ${elapsed.toFixed(0)}ms`);
-
-        printDebug('✅ Print data sent');
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -2837,19 +2916,13 @@
         st.textContent = t('sending');
 
         try {
-            const cn = selectedPerson?.chinese || '';
-            const en = selectedPerson?.english || '';
             const printT0 = performance.now();
+            const canvas = document.getElementById('label-canvas');
+            const bd = canvasToMonoBitmap(canvas);
+            await sendToPrinter(await buildTSPL2Command(bd));
 
-            // English-only names: use TEXT command (instant, ~200 bytes)
-            // Names with Chinese: use bitmap with max cropping (best quality)
-            if (!cn && en) {
-                await sendToPrinter(buildFastPrintCommand('', en));
-            } else {
-                const canvas = document.getElementById('label-canvas');
-                const bd = canvasToMonoBitmap(canvas);
-                await sendToPrinter(buildTSPL2Command(bd));
-            }
+            // Give the printer a moment to drain before unlocking the UI for the next label.
+            await sleep(800);
 
             const printMs = Math.round(performance.now() - printT0);
             st.className = 'print-status success';
@@ -2959,7 +3032,7 @@
                 const bd = canvasToMonoBitmap(canvas);
                 let ok = false;
                 try {
-                    await sendToPrinter(buildTSPL2Command(bd));
+                    await sendToPrinter(await buildTSPL2Command(bd));
                     ok = true;
                 } catch {
                     st.textContent = `Trying alt protocol for ${name}...`;
@@ -3011,9 +3084,10 @@
     // ============================================================
     // FIREBASE PRINT QUEUE
     // ============================================================
+    let printQueueQuery = null;
     let printQueueListener = null;
     let printQueueProcessing = false;
-    let pendingQueueInterval = null;
+    let queueDebounceTimer = null;
 
     async function submitPrintJob(person) {
         if (!fbDb) { toast(t('queue_unavail')); return false; }
@@ -3120,17 +3194,33 @@
 
     const printedJobKeys = new Set(); // Track already-printed jobs to prevent re-printing
 
+    async function claimPendingPrintJob(jobKey) {
+        if (!fbDb) return null;
+        const ref = fbDb.ref('printQueue/' + jobKey);
+        const result = await ref.transaction((current) => {
+            if (!current || current.status !== 'pending') return;
+            return {
+                ...current,
+                status: 'printing',
+                claimedBy: getDeviceId(),
+                claimedByName: getDeviceName(),
+                claimedAt: Date.now()
+            };
+        }, undefined, false);
+        return result.committed ? result.snapshot.val() : null;
+    }
+
     function startPrintQueueListener() {
         if (!fbDb) { queueDebug('⚠ Firebase not available'); return; }
-        if (pendingQueueInterval) { queueDebug('Listener already active'); return; }
+        if (printQueueQuery && printQueueListener) { queueDebug('Listener already active'); return; }
+        stopPrintQueueListener();
 
-        queueDebug('Starting queue polling...');
+        queueDebug('Starting queue listener...');
         printedJobKeys.clear();
 
         // Use value listener for real-time notifications, debounced to prevent rapid re-fires
-        let queueDebounceTimer = null;
-        const ref = fbDb.ref('printQueue').orderByChild('status').equalTo('pending');
-        printQueueListener = ref.on('value', (snap) => {
+        printQueueQuery = fbDb.ref('printQueue').orderByChild('status').equalTo('pending');
+        printQueueListener = (snap) => {
             const count = snap.exists() ? snap.numChildren() : 0;
             printDebug(`🔔 value listener fired (${count} pending jobs)`);
             if (!snap.exists()) return;
@@ -3145,10 +3235,11 @@
                     processPendingQueue();
                 }
             }, 1000);
-        });
+        };
+        printQueueQuery.on('value', printQueueListener);
 
         // Process any existing pending jobs once now
-        processPendingQueue();
+        if (BLE.connected) processPendingQueue();
         toast('🖨️ Printer mode active — listening for jobs');
     }
 
@@ -3197,37 +3288,32 @@
             for (const job of jobs) {
                 if (!BLE.connected) break;
                 if (printedJobKeys.has(job.key)) continue; // Double-check
-                printedJobKeys.add(job.key); // Mark BEFORE printing to prevent re-entry
 
-                const name = job.english || job.chinese || 'Unknown';
-
-                // REMOVE from Firebase FIRST — before printing — so the value listener
-                // never sees this job again and can't trigger a duplicate print
+                let claimedJob;
                 try {
-                    await fbDb.ref('printQueue/' + job.key).remove();
-                } catch (removeErr) {
-                    console.warn('[Queue] Remove failed, marking as failed:', removeErr);
-                    try {
-                        await fbDb.ref('printQueue/' + job.key + '/status').set('failed');
-                    } catch {}
+                    claimedJob = await claimPendingPrintJob(job.key);
+                } catch (claimErr) {
+                    console.warn('[Queue] Claim failed:', claimErr);
+                    continue;
                 }
+                if (!claimedJob) continue;
+                printedJobKeys.add(job.key);
+
+                const name = claimedJob.english || claimedJob.chinese || 'Unknown';
 
                 try {
                     queueDebug(`🖨️ Printing: ${name}...`);
                     toast(`🖨️ Printing: ${name}...`);
 
-                    const cn = job.chinese || '', en = job.english || '';
-                    if (!cn && en) {
-                        await sendToPrinter(buildFastPrintCommand('', en));
-                    } else {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = LABEL_W;
-                        canvas.height = LABEL_H;
-                        renderLabel(cn, en, canvas);
-                        const bd = canvasToMonoBitmap(canvas);
-                        await sendToPrinter(buildTSPL2Command(bd));
-                    }
+                    const cn = claimedJob.chinese || '', en = claimedJob.english || '';
+                    const canvas = document.createElement('canvas');
+                    canvas.width = LABEL_W;
+                    canvas.height = LABEL_H;
+                    renderLabel(cn, en, canvas);
+                    const bd = canvasToMonoBitmap(canvas);
+                    await sendToPrinter(await buildTSPL2Command(bd));
 
+                    await fbDb.ref('printQueue/' + job.key).remove();
                     queueDebug(`✓ Printed: ${name}`);
                     toast(`✓ Printed: ${name}`);
 
@@ -3235,6 +3321,13 @@
                 } catch (e) {
                     queueDebug(`✗ Failed: ${name} — ${e?.message}`);
                     toast(`Print failed: ${name}`);
+                    await fbDb.ref('printQueue/' + job.key).update({
+                        status: 'failed',
+                        failedAt: Date.now(),
+                        failedBy: getDeviceId(),
+                        failedByName: getDeviceName(),
+                        error: String(e?.message || e || 'Unknown error').slice(0, 200)
+                    }).catch(() => {});
                 }
             }
             queueDebug('✓ Queue empty — ready for jobs');
@@ -3249,14 +3342,13 @@
     }
 
     function stopPrintQueueListener() {
-        if (printQueueListener && fbDb) {
-            fbDb.ref('printQueue').off('value', printQueueListener);
-            printQueueListener = null;
+        if (queueDebounceTimer) clearTimeout(queueDebounceTimer);
+        queueDebounceTimer = null;
+        if (printQueueQuery && printQueueListener) {
+            printQueueQuery.off('value', printQueueListener);
         }
-        if (pendingQueueInterval) {
-            clearInterval(pendingQueueInterval);
-            pendingQueueInterval = null;
-        }
+        printQueueQuery = null;
+        printQueueListener = null;
     }
 
     // ============================================================
