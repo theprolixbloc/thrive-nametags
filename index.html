@@ -1470,10 +1470,14 @@
 
     // BLE Printer State
     const ISSC_SERVICE_UUID = '49535343-fe7d-4ae5-8fa9-9fafd205e455';
+    const ISSC_WRITE_UUID = '49535343-8841-43f4-a8d4-ecbe34729bb3';
     const ISSC_NOTIFY_UUIDS = new Set([
         '49535343-aca3-481c-91ec-d85e28a60318',
         '49535343-1e4d-4bd9-ba61-23c647249616',
     ]);
+    const PL70E_TRANSPORT_W = 608;
+    const PL70E_TRANSPORT_H = 408;
+    const PL70E_TRANSPORT_BPL = 76;
 
     const BLE = {
         device: null,
@@ -1495,8 +1499,8 @@
 
     function defaultBLEConfig() {
         return {
-            serviceUuid: '000000ff-0000-1000-8000-00805f9b34fb',
-            writeUuid: ''
+            serviceUuid: ISSC_SERVICE_UUID,
+            writeUuid: ISSC_WRITE_UUID
         };
     }
 
@@ -2275,6 +2279,7 @@
             // Step 3: Discover services and find writable characteristic
             btn.textContent = 'Finding services...';
             let writeChar = null;
+            let writeScore = -1;
             let selectedChars = [];
             let foundServices = [];
 
@@ -2305,9 +2310,16 @@
                         console.log(`[BLE]   Char ${c.uuid} [${props.join(', ')}]`);
 
                         if (c.properties.writeWithoutResponse || c.properties.write) {
-                            // Prefer writeWithoutResponse (50x faster than write-with-response)
-                            if (!writeChar || (c.properties.writeWithoutResponse && !writeChar.properties.writeWithoutResponse)) {
+                            const svcLower = uuid.toLowerCase();
+                            const charLower = c.uuid.toLowerCase();
+                            let score = -1;
+                            if (svcLower === ISSC_SERVICE_UUID && charLower === ISSC_WRITE_UUID) score = 100;
+                            else if (c.properties.writeWithoutResponse) score = 10;
+                            else if (c.properties.write) score = 5;
+
+                            if (score > writeScore) {
                                 writeChar = c;
+                                writeScore = score;
                                 selectedChars = chars;
                                 BLE.config.serviceUuid = uuid;
                                 BLE.config.writeUuid = c.uuid;
@@ -2316,7 +2328,7 @@
                             }
                         }
                     }
-                    if (writeChar?.properties.writeWithoutResponse) break; // Got the best type, stop searching
+                    if (writeScore === 100) break; // Found the exact Nelko transport
                 } catch (svcErr) {
                     // This UUID not available on the device, skip
                 }
@@ -2479,10 +2491,11 @@
             // Re-discover the write characteristic using saved config
             const svc = await server.getPrimaryService(BLE.config.serviceUuid);
             const chars = await svc.getCharacteristics();
-            let writeChar = null;
+            const preferredUuid = (BLE.config.writeUuid || ISSC_WRITE_UUID).toLowerCase();
+            let writeChar = chars.find(c => c.uuid.toLowerCase() === preferredUuid) || null;
             for (const c of chars) {
                 if (c.properties.writeWithoutResponse || c.properties.write) {
-                    if (!writeChar || (c.properties.writeWithoutResponse && !writeChar.properties.writeWithoutResponse)) {
+                    if (!writeChar || (c.uuid.toLowerCase() !== preferredUuid && c.properties.writeWithoutResponse && !writeChar.properties.writeWithoutResponse)) {
                         writeChar = c;
                     }
                 }
@@ -2555,6 +2568,29 @@
             }
         }
         return { bitmap, bytesPerLine: bpl, width: w, height: h };
+    }
+
+    function normalizeBitmapForPL70e(bd) {
+        if (bd.width === PL70E_TRANSPORT_W && bd.height === PL70E_TRANSPORT_H && bd.bytesPerLine === PL70E_TRANSPORT_BPL) {
+            return bd;
+        }
+
+        const out = new Uint8Array(PL70E_TRANSPORT_BPL * PL70E_TRANSPORT_H);
+        const rows = Math.min(bd.height, PL70E_TRANSPORT_H);
+        const yOffset = Math.max(0, Math.floor((PL70E_TRANSPORT_H - rows) / 2));
+
+        for (let y = 0; y < rows; y++) {
+            const srcOff = y * bd.bytesPerLine;
+            const dstOff = (y + yOffset) * PL70E_TRANSPORT_BPL;
+            out.set(bd.bitmap.subarray(srcOff, srcOff + PL70E_TRANSPORT_BPL), dstOff);
+        }
+
+        return {
+            bitmap: out,
+            bytesPerLine: PL70E_TRANSPORT_BPL,
+            width: PL70E_TRANSPORT_W,
+            height: PL70E_TRANSPORT_H,
+        };
     }
 
     // Fast print: English-only → TEXT command (instant), Chinese → bitmap for that region + TEXT for English
@@ -2672,8 +2708,6 @@
     async function buildTSPL2Command(bd) {
         const { bitmap, bytesPerLine, width, height } = bd;
         const enc = new TextEncoder();
-        const widthMM = (width / 203 * 25.4).toFixed(1);
-        const heightMM = (height / 203 * 25.4).toFixed(1);
         const pq = getPrintQuality();
 
         let mode = 0;
@@ -2694,7 +2728,7 @@
             : `BITMAP 0,0,${bytesPerLine},${height},0,`;
 
         const header = enc.encode(
-            `SIZE ${widthMM} mm,${heightMM} mm\r\n` +
+            `SIZE 76 mm,51 mm\r\n` +
             `GAP 3.0 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
             `DENSITY ${pq.density}\r\n` +
@@ -2760,11 +2794,12 @@
         printDebug(`🔵 bleWrite #${_bleWriteCount} (${buf.length} bytes, total ${_bleTotalBytes})`);
         const noResp = BLE.writeChar.properties.writeWithoutResponse;
         const CHUNK = 182; // Captured PL70e ATT payload with MTU 185
+        const CHUNK_DELAY = 18; // Captured write cadence is roughly 18-20ms per packet
         for (let off = 0; off < buf.length; off += CHUNK) {
             const chunk = buf.subarray(off, Math.min(off + CHUNK, buf.length));
             if (noResp) await BLE.writeChar.writeValueWithoutResponse(chunk);
             else await BLE.writeChar.writeValue(chunk);
-            if (off + CHUNK < buf.length) await sleep(noResp ? 5 : 15);
+            if (off + CHUNK < buf.length) await sleep(CHUNK_DELAY);
         }
     }
 
@@ -2776,10 +2811,11 @@
         const server = await BLE.device.gatt.connect();
         const svc = await server.getPrimaryService(BLE.config.serviceUuid);
         const chars = await svc.getCharacteristics();
-        let writeChar = null;
+        const preferredUuid = (BLE.config.writeUuid || ISSC_WRITE_UUID).toLowerCase();
+        let writeChar = chars.find(c => c.uuid.toLowerCase() === preferredUuid) || null;
         for (const c of chars) {
             if (c.properties.writeWithoutResponse || c.properties.write) {
-                if (!writeChar || (c.properties.writeWithoutResponse && !writeChar.properties.writeWithoutResponse)) {
+                if (!writeChar || (c.uuid.toLowerCase() !== preferredUuid && c.properties.writeWithoutResponse && !writeChar.properties.writeWithoutResponse)) {
                     writeChar = c;
                 }
             }
@@ -2918,7 +2954,7 @@
         try {
             const printT0 = performance.now();
             const canvas = document.getElementById('label-canvas');
-            const bd = canvasToMonoBitmap(canvas);
+            const bd = normalizeBitmapForPL70e(canvasToMonoBitmap(canvas));
             await sendToPrinter(await buildTSPL2Command(bd));
 
             // Give the printer a moment to drain before unlocking the UI for the next label.
@@ -3029,7 +3065,7 @@
             renderLabel(member.chinese, member.english, canvas);
 
             try {
-                const bd = canvasToMonoBitmap(canvas);
+                const bd = normalizeBitmapForPL70e(canvasToMonoBitmap(canvas));
                 let ok = false;
                 try {
                     await sendToPrinter(await buildTSPL2Command(bd));
@@ -3310,7 +3346,7 @@
                     canvas.width = LABEL_W;
                     canvas.height = LABEL_H;
                     renderLabel(cn, en, canvas);
-                    const bd = canvasToMonoBitmap(canvas);
+                    const bd = normalizeBitmapForPL70e(canvasToMonoBitmap(canvas));
                     await sendToPrinter(await buildTSPL2Command(bd));
 
                     await fbDb.ref('printQueue/' + job.key).remove();
