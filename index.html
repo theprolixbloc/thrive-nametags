@@ -1172,6 +1172,7 @@
     const CHINESE_FONT = '"Noto Sans TC", "PingFang TC", "Microsoft YaHei", sans-serif';
     const ENGLISH_FONT = '"Inter", -apple-system, BlinkMacSystemFont, sans-serif';
     const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const IS_BLUEFY = /\bBluefy\b/i.test(navigator.userAgent);
     const HAS_BLE = !!navigator.bluetooth;
     // All data reads go through Apps Script (no direct Google Sheet access)
 
@@ -2550,6 +2551,15 @@
         }
     }
 
+    function getPL70eDensity() {
+        const q = localStorage.getItem('thrive_print_quality') || '2';
+        switch (q) {
+            case '1': return 2;
+            case '3': return 6;
+            default:  return 4;
+        }
+    }
+
     function canvasToMonoBitmap(canvas) {
         const ctx = canvas.getContext('2d');
         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -2703,22 +2713,12 @@
         return new Uint8Array(await new Response(stream).arrayBuffer());
     }
 
-    function buildPL70eNeutralizerTail(pq = getPrintQuality()) {
-        return new TextEncoder().encode(
-            `SIZE 76 mm,51 mm\r\n` +
-            `GAP 3.0 mm,0 mm\r\n` +
-            `DIRECTION 0,0\r\n` +
-            `DENSITY ${pq.density}\r\n` +
-            `CLS\r\n`
-        );
-    }
-
     // TSPL2 BITMAP mode matching Nelko's direct BLE flow:
     // READSTA -> ready notification -> BITMAP mode 3 (zlib) -> PRINT 1,1
     async function buildTSPL2Command(bd) {
         const { bitmap, bytesPerLine, width, height } = bd;
         const enc = new TextEncoder();
-        const pq = getPrintQuality();
+        const density = getPL70eDensity();
 
         let mode = 0;
         let bitmapPayload = bitmap;
@@ -2741,19 +2741,17 @@
             `SIZE 76 mm,51 mm\r\n` +
             `GAP 3.0 mm,0 mm\r\n` +
             `DIRECTION 0,0\r\n` +
-            `DENSITY ${pq.density}\r\n` +
+            `DENSITY ${density}\r\n` +
             `CLS\r\n` +
             bitmapCmd
         );
         const footer = enc.encode(`\r\nPRINT 1,1\r\n`);
-        const neutralizer = buildPL70eNeutralizerTail(pq);
 
-        const totalLen = header.length + bitmapPayload.length + footer.length + neutralizer.length;
+        const totalLen = header.length + bitmapPayload.length + footer.length;
         const cmd = new Uint8Array(totalLen);
         cmd.set(header, 0);
         cmd.set(bitmapPayload, header.length);
         cmd.set(footer, header.length + bitmapPayload.length);
-        cmd.set(neutralizer, header.length + bitmapPayload.length + footer.length);
 
         console.log(`[TSPL2] ${totalLen} bytes (${mode === 3 ? 'zlib' : 'raw'} bitmap, ${bytesPerLine}x${height})`);
         return cmd;
@@ -2798,15 +2796,21 @@
     let _bleWriteCount = 0;
     let _bleTotalBytes = 0;
 
+    function isBluefyPL70eDirectWrite() {
+        return IS_BLUEFY && BLE.writeChar?.uuid?.toLowerCase() === ISSC_WRITE_UUID;
+    }
+
     // Low-level BLE write: send a Uint8Array in chunks
     async function bleWrite(buf) {
         if (!BLE.writeChar) throw new Error('Printer not connected');
         _bleWriteCount++;
         _bleTotalBytes += buf.length;
-        printDebug(`🔵 bleWrite #${_bleWriteCount} (${buf.length} bytes, total ${_bleTotalBytes})`);
         const noResp = BLE.writeChar.properties.writeWithoutResponse;
-        const CHUNK = 182; // Captured PL70e ATT payload with MTU 185
-        const CHUNK_DELAY = 18; // Captured write cadence is roughly 18-20ms per packet
+        const bluefyPL70e = isBluefyPL70eDirectWrite();
+        const CHUNK = bluefyPL70e ? 20 : 182;
+        const CHUNK_DELAY = bluefyPL70e ? 8 : 18;
+        const transport = bluefyPL70e ? 'bluefy-20B' : 'native-182B';
+        printDebug(`🔵 bleWrite #${_bleWriteCount} (${buf.length} bytes, total ${_bleTotalBytes}, ${transport})`);
         for (let off = 0; off < buf.length; off += CHUNK) {
             const chunk = buf.subarray(off, Math.min(off + CHUNK, buf.length));
             if (noResp) await BLE.writeChar.writeValueWithoutResponse(chunk);
@@ -2861,16 +2865,6 @@
         printDebug(ready ? '✅ Printer ready' : '⚠️ Continuing without ready ACK');
 
         await bleWrite(buf);
-
-        // Leave the printer in a blank state on the same BLE session so firmware
-        // re-execution loops hit an empty buffer instead of the last label.
-        await sleep(900);
-        try {
-            await bleWrite(new TextEncoder().encode('INITIALPRINTER\r\n'));
-            printDebug('🧹 INITIALPRINTER sent');
-        } catch (e) {
-            printDebug(`⚠️ INITIALPRINTER failed: ${e?.message || e}`);
-        }
 
         const elapsed = performance.now() - t0;
         printDebug(`📤 Data sent: ${buf.length} bytes, ${elapsed.toFixed(0)}ms`);
