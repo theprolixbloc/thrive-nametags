@@ -2703,6 +2703,16 @@
         return new Uint8Array(await new Response(stream).arrayBuffer());
     }
 
+    function buildPL70eNeutralizerTail(pq = getPrintQuality()) {
+        return new TextEncoder().encode(
+            `SIZE 76 mm,51 mm\r\n` +
+            `GAP 3.0 mm,0 mm\r\n` +
+            `DIRECTION 0,0\r\n` +
+            `DENSITY ${pq.density}\r\n` +
+            `CLS\r\n`
+        );
+    }
+
     // TSPL2 BITMAP mode matching Nelko's direct BLE flow:
     // READSTA -> ready notification -> BITMAP mode 3 (zlib) -> PRINT 1,1
     async function buildTSPL2Command(bd) {
@@ -2736,12 +2746,14 @@
             bitmapCmd
         );
         const footer = enc.encode(`\r\nPRINT 1,1\r\n`);
+        const neutralizer = buildPL70eNeutralizerTail(pq);
 
-        const totalLen = header.length + bitmapPayload.length + footer.length;
+        const totalLen = header.length + bitmapPayload.length + footer.length + neutralizer.length;
         const cmd = new Uint8Array(totalLen);
         cmd.set(header, 0);
         cmd.set(bitmapPayload, header.length);
         cmd.set(footer, header.length + bitmapPayload.length);
+        cmd.set(neutralizer, header.length + bitmapPayload.length + footer.length);
 
         console.log(`[TSPL2] ${totalLen} bytes (${mode === 3 ? 'zlib' : 'raw'} bitmap, ${bytesPerLine}x${height})`);
         return cmd;
@@ -2849,6 +2861,16 @@
         printDebug(ready ? '✅ Printer ready' : '⚠️ Continuing without ready ACK');
 
         await bleWrite(buf);
+
+        // Leave the printer in a blank state on the same BLE session so firmware
+        // re-execution loops hit an empty buffer instead of the last label.
+        await sleep(900);
+        try {
+            await bleWrite(new TextEncoder().encode('INITIALPRINTER\r\n'));
+            printDebug('🧹 INITIALPRINTER sent');
+        } catch (e) {
+            printDebug(`⚠️ INITIALPRINTER failed: ${e?.message || e}`);
+        }
 
         const elapsed = performance.now() - t0;
         printDebug(`📤 Data sent: ${buf.length} bytes, ${elapsed.toFixed(0)}ms`);
